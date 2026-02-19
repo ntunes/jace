@@ -26,6 +26,16 @@ async def check_ospf(device_manager: DeviceManager,
     return results
 
 
+async def check_isis(device_manager: DeviceManager,
+                     device_name: str) -> dict[str, CommandResult]:
+    """Check IS-IS adjacencies."""
+    results = {}
+    results["show isis adjacency"] = await device_manager.run_command(
+        device_name, "show isis adjacency"
+    )
+    return results
+
+
 async def check_routes(device_manager: DeviceManager,
                        device_name: str) -> dict[str, CommandResult]:
     """Check route table summary for unexpected changes."""

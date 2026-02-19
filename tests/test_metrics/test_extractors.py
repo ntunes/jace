@@ -74,6 +74,25 @@ OSPF_NEIGHBOR_XML = fromstring("""\
 </ospf-neighbor-information>
 """)
 
+ISIS_ADJACENCY_XML = fromstring("""\
+<isis-adjacency-information>
+  <isis-adjacency>
+    <interface-name>ge-0/0/0.0</interface-name>
+    <system-name>mx240-peer1</system-name>
+    <level>2</level>
+    <adjacency-state>Up</adjacency-state>
+    <holdtime>23</holdtime>
+  </isis-adjacency>
+  <isis-adjacency>
+    <interface-name>ge-0/0/1.0</interface-name>
+    <system-name>mx240-peer2</system-name>
+    <level>2</level>
+    <adjacency-state>Up</adjacency-state>
+    <holdtime>20</holdtime>
+  </isis-adjacency>
+</isis-adjacency-information>
+""")
+
 ROUTING_ENGINE_XML = fromstring("""\
 <route-engine-information>
   <route-engine>
@@ -221,6 +240,12 @@ Address          Interface              State     ID               Pri  Dead
 10.0.1.3         ge-0/0/1.0             Full      10.0.0.3         128    32
 """
 
+ISIS_ADJACENCY_TEXT = """\
+Interface             System         L State        Hold (secs) SNPA
+ge-0/0/0.0            mx240-peer1    2 Up           23
+ge-0/0/1.0            mx240-peer2    2 Up           20
+"""
+
 ROUTING_ENGINE_TEXT = """\
 Routing Engine status:
   Slot 0:
@@ -317,6 +342,19 @@ def test_routing_xml_ospf():
     assert by_name["ospf_neighbor_count"].value == 2.0
 
 
+def test_routing_xml_isis():
+    results = {
+        "show isis adjacency": CommandResult(
+            command="show isis adjacency", output="",
+            structured=ISIS_ADJACENCY_XML,
+        ),
+    }
+    metrics = extract_routing_metrics(results)
+    by_name = {m.metric: m for m in metrics}
+
+    assert by_name["isis_adjacency_count"].value == 2.0
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Routing — text fallback
 # ═══════════════════════════════════════════════════════════════════════
@@ -357,6 +395,18 @@ def test_routing_text_ospf():
     by_name = {m.metric: m for m in metrics}
 
     assert by_name["ospf_neighbor_count"].value == 2.0
+
+
+def test_routing_text_isis():
+    results = {
+        "show isis adjacency": CommandResult(
+            command="show isis adjacency", output=ISIS_ADJACENCY_TEXT,
+        ),
+    }
+    metrics = extract_routing_metrics(results)
+    by_name = {m.metric: m for m in metrics}
+
+    assert by_name["isis_adjacency_count"].value == 2.0
 
 
 def test_routing_empty():

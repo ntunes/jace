@@ -47,7 +47,7 @@ def build_default_registry() -> CheckRegistry:
     """Build a registry with all default health checks."""
     from jace.checks.chassis import check_alarms, check_environment, check_fpc, check_pfe_exceptions
     from jace.checks.interfaces import check_interface_status, check_interface_errors
-    from jace.checks.routing import check_bgp, check_ospf, check_routes
+    from jace.checks.routing import check_bgp, check_ospf, check_isis, check_routes
     from jace.checks.system import check_resource_usage, check_storage, check_processes
     from jace.checks.config_audit import audit_security, audit_best_practices
 
@@ -63,6 +63,7 @@ def build_default_registry() -> CheckRegistry:
 
     registry.register("routing", check_bgp)
     registry.register("routing", check_ospf)
+    registry.register("routing", check_isis)
     registry.register("routing", check_routes)
 
     registry.register("system", check_resource_usage)

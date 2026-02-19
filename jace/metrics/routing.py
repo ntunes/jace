@@ -35,6 +35,13 @@ def extract_routing_metrics(
         elif ospf_result.output:
             metrics.extend(_ospf_neighbor_text(ospf_result.output))
 
+    isis_result = results.get("show isis adjacency")
+    if isis_result and isis_result.success:
+        if isis_result.structured is not None:
+            metrics.extend(_isis_adjacency_xml(isis_result.structured))
+        elif isis_result.output:
+            metrics.extend(_isis_adjacency_text(isis_result.output))
+
     return metrics
 
 
@@ -80,6 +87,14 @@ def _ospf_neighbor_xml(xml: Any) -> list[ExtractedMetric]:
     return [ExtractedMetric(
         metric="ospf_neighbor_count", value=float(len(neighbors)),
         unit="neighbors",
+    )]
+
+
+def _isis_adjacency_xml(xml: Any) -> list[ExtractedMetric]:
+    adjacencies = xml_findall(xml, "isis-adjacency")
+    return [ExtractedMetric(
+        metric="isis_adjacency_count", value=float(len(adjacencies)),
+        unit="adjacencies",
     )]
 
 
@@ -130,4 +145,15 @@ def _ospf_neighbor_text(output: str) -> list[ExtractedMetric]:
     return [ExtractedMetric(
         metric="ospf_neighbor_count", value=float(len(neighbor_lines)),
         unit="neighbors",
+    )]
+
+
+def _isis_adjacency_text(output: str) -> list[ExtractedMetric]:
+    # IS-IS adjacency lines start with an interface name (e.g., ge-0/0/0.0)
+    adj_lines = re.findall(
+        r"^\s*\S+\s+\S+\s+\d+\s+\S+\s+\S+", output, re.MULTILINE,
+    )
+    return [ExtractedMetric(
+        metric="isis_adjacency_count", value=float(len(adj_lines)),
+        unit="adjacencies",
     )]

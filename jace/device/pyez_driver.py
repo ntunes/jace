@@ -31,6 +31,7 @@ RPC_MAP: dict[str, tuple[str, dict]] = {
     "show bgp neighbor":                ("get_bgp_neighbor_information", {}),
     "show ospf neighbor":               ("get_ospf_neighbor_information", {}),
     "show ospf interface":              ("get_ospf_interface_information", {}),
+    "show isis adjacency":              ("get_isis_adjacency_information", {}),
     "show route summary":               ("get_route_summary_information", {}),
     "show system storage":              ("get_system_storage", {}),
     "show system processes extensive":  ("get_system_process_information", {}),
