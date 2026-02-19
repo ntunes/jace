@@ -21,6 +21,7 @@ JACE works in the background — it decides what to check and when, surfaces iss
 git clone <repo-url> && cd jace
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -e .
 
 # Configure
@@ -183,6 +184,7 @@ The agent has access to these tools during conversations and health check analys
 # Set up dev environment
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -e ".[dev]"
 
 # Run tests
