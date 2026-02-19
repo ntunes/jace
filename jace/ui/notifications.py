@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -13,6 +15,15 @@ SEVERITY_STYLES = {
     Severity.WARNING: ("bold black on yellow", "WARNING"),
     Severity.INFO: ("bold white on blue", "INFO"),
 }
+
+
+def _format_timestamp(iso: str) -> str:
+    """Format an ISO timestamp to a human-friendly string."""
+    try:
+        dt = datetime.fromisoformat(iso)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return iso
 
 
 def render_finding(console: Console, finding: Finding, is_new: bool) -> None:
@@ -36,6 +47,16 @@ def render_finding(console: Console, finding: Finding, is_new: bool) -> None:
         body.append("\n\n")
         body.append("Recommendation: ", style="bold cyan")
         body.append(finding.recommendation)
+
+    # Timestamps
+    first = _format_timestamp(finding.first_seen)
+    last = _format_timestamp(finding.last_seen)
+    body.append("\n\n")
+    body.append("First detected: ", style="dim bold")
+    body.append(first, style="dim")
+    if first != last:
+        body.append("  Last updated: ", style="dim bold")
+        body.append(last, style="dim")
 
     border_style = {
         Severity.CRITICAL: "red",
