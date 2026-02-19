@@ -14,7 +14,7 @@ from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
 from jace.device.manager import DeviceManager
 from jace.llm import create_llm_client
-from jace.ui.shell import InteractiveShell
+from jace.ui.tui import JaceApp
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +76,14 @@ class Application:
         if api or self.settings.api.enabled:
             await self._start_api()
 
-        # Run interactive shell
-        shell = InteractiveShell(self.agent)
+        # Run Textual TUI
+        tui = JaceApp(
+            agent=self.agent,
+            device_manager=self.device_manager,
+            findings_tracker=self.findings_tracker,
+        )
         try:
-            await shell.run()
+            await tui.run_async()
         finally:
             await self.shutdown()
 
@@ -112,11 +116,8 @@ class Application:
                      self.settings.api.host, self.settings.api.port)
 
     def _setup_logging(self) -> None:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%H:%M:%S",
-        )
+        # Set level only — TUI installs its own handler in on_mount()
+        logging.root.setLevel(logging.INFO)
         # Quiet noisy libraries
         logging.getLogger("paramiko").setLevel(logging.WARNING)
         logging.getLogger("ncclient").setLevel(logging.WARNING)

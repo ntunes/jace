@@ -26,8 +26,8 @@ def _format_timestamp(iso: str) -> str:
         return iso
 
 
-def render_finding(console: Console, finding: Finding, is_new: bool) -> None:
-    """Render a finding as a Rich panel."""
+def render_finding_panel(finding: Finding, is_new: bool) -> Panel:
+    """Build a Rich Panel renderable for a finding."""
     style, label = SEVERITY_STYLES.get(
         finding.severity, ("", finding.severity.value.upper())
     )
@@ -64,13 +64,18 @@ def render_finding(console: Console, finding: Finding, is_new: bool) -> None:
         Severity.INFO: "blue",
     }.get(finding.severity, "white")
 
-    console.print()
-    console.print(Panel(
+    return Panel(
         body,
         title=title,
         border_style=border_style,
         padding=(0, 1),
-    ))
+    )
+
+
+def render_finding(console: Console, finding: Finding, is_new: bool) -> None:
+    """Render a finding as a Rich panel (legacy console-printing wrapper)."""
+    console.print()
+    console.print(render_finding_panel(finding, is_new))
 
 
 def render_findings_summary(console: Console, findings: list[Finding]) -> None:
