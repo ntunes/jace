@@ -8,4 +8,4 @@ build/
 *.db
 .pytest_cache/
 .claude/
-config.example
+config.yaml
