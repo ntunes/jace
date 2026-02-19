@@ -13,6 +13,7 @@ from rich.text import Text
 
 from jace.agent.core import AgentCore
 from jace.agent.findings import Finding
+from jace.ui.log_panel import LogPanel
 from jace.ui.notifications import (
     format_status_bar,
     render_finding,
@@ -48,31 +49,36 @@ class InteractiveShell:
         self._agent = agent
         self._console = Console()
         self._running = False
+        self._log_panel = LogPanel(self._console)
 
     async def run(self) -> None:
         """Main REPL loop."""
         self._running = True
-        self._console.print(Panel(
-            BANNER,
-            style="bold cyan",
-            border_style="cyan",
-        ))
-        self._console.print("[dim]Type /help for commands, or ask a question.[/dim]\n")
+        self._log_panel.setup()
+        try:
+            self._console.print(Panel(
+                BANNER,
+                style="bold cyan",
+                border_style="cyan",
+            ))
+            self._console.print("[dim]Type /help for commands, or ask a question.[/dim]\n")
 
-        # Set up notification callback
-        self._agent.set_notify_callback(self._on_finding)
+            # Set up notification callback
+            self._agent.set_notify_callback(self._on_finding)
 
-        while self._running:
-            try:
-                user_input = await self._prompt()
-            except (EOFError, KeyboardInterrupt):
-                self._console.print("\n[dim]Goodbye![/dim]")
-                break
+            while self._running:
+                try:
+                    user_input = await self._prompt()
+                except (EOFError, KeyboardInterrupt):
+                    self._console.print("\n[dim]Goodbye![/dim]")
+                    break
 
-            if not user_input.strip():
-                continue
+                if not user_input.strip():
+                    continue
 
-            await self._handle_input(user_input.strip())
+                await self._handle_input(user_input.strip())
+        finally:
+            self._log_panel.teardown()
 
     async def _prompt(self) -> str:
         """Display prompt and read user input (runs in executor for async)."""
@@ -113,6 +119,7 @@ class InteractiveShell:
 
         elif cmd == "/clear":
             self._console.clear()
+            self._log_panel.restore_after_clear()
 
         elif cmd == "/devices":
             devices = self._agent._device_manager.list_devices()
