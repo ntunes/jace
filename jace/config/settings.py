@@ -37,6 +37,8 @@ class LLMConfig(BaseModel):
     base_url: str | None = None
     max_tokens: int = 4096
     system_prompt: str | None = None
+    log_file: str | None = None
+    log_format: str = "text"
 
 
 class DeviceConfig(BaseModel):
