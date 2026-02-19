@@ -173,7 +173,7 @@ class AgentCore:
             response = await self._llm.chat(
                 messages=ctx.messages,
                 tools=AGENT_TOOLS,
-                system=SYSTEM_PROMPT,
+                system=self._settings.llm.system_prompt or SYSTEM_PROMPT,
                 max_tokens=self._settings.llm.max_tokens,
             )
 

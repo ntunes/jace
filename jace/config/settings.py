@@ -36,6 +36,7 @@ class LLMConfig(BaseModel):
     api_key: str = ""
     base_url: str | None = None
     max_tokens: int = 4096
+    system_prompt: str | None = None
 
 
 class DeviceConfig(BaseModel):

@@ -2,6 +2,7 @@ llm:
   provider: anthropic          # or "openai"
   model: claude-sonnet-4-20250514
   api_key: ${ANTHROPIC_API_KEY}  # env var reference
+  # system_prompt: "You are a custom network assistant..."  # override default persona
   # For OpenAI-compatible:
   # provider: openai
   # base_url: http://localhost:11434/v1  # e.g., Ollama
