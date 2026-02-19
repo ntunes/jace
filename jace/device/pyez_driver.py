@@ -30,10 +30,10 @@ RPC_MAP: dict[str, tuple[str, dict]] = {
     "show ospf interface":              ("get_ospf_interface_information", {}),
     "show route summary":               ("get_route_summary_information", {}),
     "show system storage":              ("get_system_storage", {}),
-    "show system processes extensive":  ("get_system_process_information", {"extensive": True}),
+    "show system processes extensive":  ("get_system_process_information", {}),
     "show system uptime":               ("get_system_uptime_information", {}),
     "show system memory":               ("get_system_memory_information", {}),
-    "show pfe statistics exceptions":   ("get_pfe_statistics", {"exceptions": True}),
+    "show pfe statistics exceptions":   ("get_pfe_statistics", {}),
     "show configuration":               ("get_config", {}),
     "show version":                     ("get_software_information", {}),
 }
@@ -134,9 +134,13 @@ class PyEZDriver(DeviceDriver):
             return ""
         loop = asyncio.get_running_loop()
         try:
-            options: dict = {"format": format}
             if section:
-                options["filter_xml"] = section
+                result = await loop.run_in_executor(
+                    _executor,
+                    partial(self._dev.cli, f"show configuration {section}", warning=False),
+                )
+                return str(result)
+            options: dict = {"format": format}
             result = await loop.run_in_executor(
                 _executor,
                 partial(self._dev.rpc.get_config, **options),

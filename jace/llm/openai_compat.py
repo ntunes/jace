@@ -62,8 +62,7 @@ class OpenAICompatClient(LLMClient):
 
             elif msg.role == Role.ASSISTANT and msg.tool_calls:
                 api_msg: dict[str, Any] = {"role": "assistant"}
-                if msg.content:
-                    api_msg["content"] = msg.content
+                api_msg["content"] = msg.content or ""
                 api_msg["tool_calls"] = [
                     {
                         "id": tc.id,

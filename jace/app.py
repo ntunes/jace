@@ -103,3 +103,5 @@ class Application:
         logging.getLogger("paramiko").setLevel(logging.WARNING)
         logging.getLogger("ncclient").setLevel(logging.WARNING)
         logging.getLogger("netmiko").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("openai").setLevel(logging.WARNING)
