@@ -49,6 +49,7 @@ class InteractiveShell:
         self._agent = agent
         self._console = Console()
         self._running = False
+        self._awaiting_input = False
         self._log_panel = LogPanel(self._console)
 
     async def run(self) -> None:
@@ -91,6 +92,7 @@ class InteractiveShell:
         status = format_status_bar(len(devices), findings_count, critical_count)
         self._console.print(Text.from_markup(f"[dim]{status}[/dim]"))
 
+        self._awaiting_input = True
         try:
             return await loop.run_in_executor(
                 None,
@@ -98,6 +100,8 @@ class InteractiveShell:
             )
         except EOFError:
             raise
+        finally:
+            self._awaiting_input = False
 
     async def _handle_input(self, text: str) -> None:
         """Handle user input — commands or natural language queries."""
@@ -180,3 +184,7 @@ class InteractiveShell:
     async def _on_finding(self, finding: Finding, is_new: bool) -> None:
         """Callback for background findings — renders alerts above the prompt."""
         render_finding(self._console, finding, is_new)
+        if self._awaiting_input:
+            self._console.print(
+                Text.from_markup("[bold cyan]jace>[/bold cyan] "), end="",
+            )
