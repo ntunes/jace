@@ -49,3 +49,8 @@ blocked_commands:
   - "delete *"
   - "activate *"
   - "deactivate *"
+
+# allowed_commands:           # when set, only matching commands are permitted
+#   - "show *"
+#   - "ping *"
+#   - "traceroute *"

@@ -18,12 +18,17 @@ logger = logging.getLogger(__name__)
 class DeviceManager:
     """Manages connections to multiple Junos devices."""
 
-    def __init__(self, blocked_commands: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        blocked_commands: list[str] | None = None,
+        allowed_commands: list[str] | None = None,
+    ) -> None:
         self._devices: dict[str, DeviceConfig] = {}
         self._drivers: dict[str, DeviceDriver] = {}
         self._fallback_drivers: dict[str, DeviceDriver] = {}
         self._info: dict[str, DeviceInfo] = {}
         self._blocked_commands = [p.strip().lower() for p in (blocked_commands or [])]
+        self._allowed_commands = [p.strip().lower() for p in (allowed_commands or [])]
 
     def add_device(self, config: DeviceConfig) -> None:
         self._devices[config.name] = config
@@ -107,6 +112,13 @@ class DeviceManager:
         normalized = command.strip().lower()
         return any(fnmatch(normalized, pattern) for pattern in self._blocked_commands)
 
+    def _is_allowed(self, command: str) -> bool:
+        """Check if a command matches the allowlist. Returns True if allowlist is empty."""
+        if not self._allowed_commands:
+            return True
+        normalized = command.strip().lower()
+        return any(fnmatch(normalized, pattern) for pattern in self._allowed_commands)
+
     async def run_command(self, device_name: str, command: str) -> CommandResult:
         """Run a command on a device, with fallback to Netmiko if PyEZ fails."""
         if self._is_blocked(command):
@@ -114,6 +126,13 @@ class DeviceManager:
             return CommandResult(
                 command=command, output="", success=False,
                 error=f"Command blocked by policy: {command}",
+            )
+
+        if not self._is_allowed(command):
+            logger.warning("Command not in allowed list: %s", command)
+            return CommandResult(
+                command=command, output="", success=False,
+                error=f"Command not in allowed commands: {command}",
             )
 
         driver = self._drivers.get(device_name)

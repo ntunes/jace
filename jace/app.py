@@ -26,6 +26,7 @@ class Application:
         self.settings = load_config(config_path)
         self.device_manager = DeviceManager(
             blocked_commands=self.settings.blocked_commands,
+            allowed_commands=self.settings.allowed_commands,
         )
         self.llm = create_llm_client(self.settings.llm)
         self.check_registry = build_default_registry()

@@ -85,6 +85,7 @@ class Settings(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     blocked_commands: list[str] = Field(default_factory=list)
+    allowed_commands: list[str] = Field(default_factory=list)
 
     @property
     def storage_path(self) -> Path:

@@ -91,3 +91,76 @@ class TestBlocklist:
         result = await mgr.run_command("r1", "show interfaces")
         assert result.success is False
         assert "not connected" in result.error.lower()
+
+
+# --- Allowlist tests ---
+
+class TestAllowlist:
+    """Tests for command allowlist enforcement."""
+
+    def test_is_allowed_empty_allows_everything(self):
+        mgr = DeviceManager(allowed_commands=[])
+        assert mgr._is_allowed("show interfaces") is True
+        assert mgr._is_allowed("request system reboot") is True
+
+    def test_is_allowed_none_allows_everything(self):
+        mgr = DeviceManager()
+        assert mgr._is_allowed("show interfaces") is True
+
+    def test_is_allowed_pattern_match(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        assert mgr._is_allowed("show interfaces") is True
+        assert mgr._is_allowed("show route") is True
+
+    def test_is_allowed_rejects_non_matching(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        assert mgr._is_allowed("request system reboot") is False
+        assert mgr._is_allowed("clear bgp neighbor all") is False
+
+    def test_is_allowed_multiple_patterns(self):
+        mgr = DeviceManager(allowed_commands=["show *", "ping *"])
+        assert mgr._is_allowed("show interfaces") is True
+        assert mgr._is_allowed("ping 10.0.0.1") is True
+        assert mgr._is_allowed("traceroute 10.0.0.1") is False
+
+    def test_is_allowed_case_insensitive(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        assert mgr._is_allowed("Show Interfaces") is True
+        assert mgr._is_allowed("SHOW ROUTE") is True
+
+    def test_is_allowed_strips_whitespace(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        assert mgr._is_allowed("  show interfaces  ") is True
+
+    def test_blocklist_takes_precedence_over_allowlist(self):
+        mgr = DeviceManager(
+            blocked_commands=["show security *"],
+            allowed_commands=["show *"],
+        )
+        assert mgr._is_blocked("show security ike sa") is True
+        assert mgr._is_allowed("show security ike sa") is True
+        # Both match, but blocklist is checked first in run_command
+
+    @pytest.mark.asyncio
+    async def test_run_command_not_allowed(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        result = await mgr.run_command("r1", "request system reboot")
+        assert result.success is False
+        assert "not in allowed commands" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_run_command_allowed_but_disconnected(self):
+        mgr = DeviceManager(allowed_commands=["show *"])
+        result = await mgr.run_command("r1", "show interfaces")
+        assert result.success is False
+        assert "not connected" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_run_command_blocklist_before_allowlist(self):
+        mgr = DeviceManager(
+            blocked_commands=["show security *"],
+            allowed_commands=["show *"],
+        )
+        result = await mgr.run_command("r1", "show security ike sa")
+        assert result.success is False
+        assert "blocked by policy" in result.error.lower()
