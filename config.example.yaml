@@ -1,0 +1,34 @@
+llm:
+  provider: anthropic          # or "openai"
+  model: claude-sonnet-4-20250514
+  api_key: ${ANTHROPIC_API_KEY}  # env var reference
+  # For OpenAI-compatible:
+  # provider: openai
+  # base_url: http://localhost:11434/v1  # e.g., Ollama
+  # api_key: ${OPENAI_API_KEY}
+  # model: gpt-4o
+
+devices:
+  - name: mx-core-01
+    host: 10.0.0.1
+    username: admin
+    password: ${DEVICE_PASSWORD}   # or use ssh_key
+    ssh_key: ~/.ssh/id_rsa
+    driver: auto                   # auto | pyez | netmiko
+    port: 830                      # NETCONF default
+    platform: junos
+
+schedule:
+  chassis:    300
+  interfaces: 120
+  routing:    180
+  system:     300
+  config:     3600
+
+api:
+  enabled: false
+  host: 127.0.0.1
+  port: 8080
+
+storage:
+  path: ~/.jace/            # findings DB, state, logs

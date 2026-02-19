@@ -1,0 +1,124 @@
+"""FastAPI server for REST API and WebSocket integrations."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+
+from jace.agent.core import AgentCore
+from jace.agent.findings import Finding, FindingsTracker, Severity
+from jace.device.manager import DeviceManager
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    response: str
+
+
+def create_api_app(agent: AgentCore, device_manager: DeviceManager,
+                   findings_tracker: FindingsTracker) -> FastAPI:
+    """Create and configure the FastAPI application."""
+
+    app = FastAPI(
+        title="JACE API",
+        description="REST API for JACE: Autonomous Control Engine",
+        version="0.1.0",
+    )
+
+    # WebSocket connections for real-time findings
+    ws_clients: list[WebSocket] = []
+
+    # Wire up finding notifications to WebSocket broadcast
+    original_callback = agent._notify_callback
+
+    async def _broadcast_finding(finding: Finding, is_new: bool) -> None:
+        if original_callback:
+            await original_callback(finding, is_new)
+        data = json.dumps({
+            "type": "finding",
+            "is_new": is_new,
+            "finding": finding.to_dict(),
+        })
+        for ws in list(ws_clients):
+            try:
+                await ws.send_text(data)
+            except Exception:
+                ws_clients.remove(ws)
+
+    agent.set_notify_callback(_broadcast_finding)
+
+    @app.get("/health")
+    async def health() -> dict[str, Any]:
+        connected = device_manager.get_connected_devices()
+        return {
+            "status": "ok",
+            "devices_connected": len(connected),
+            "active_findings": findings_tracker.active_count,
+            "critical_findings": findings_tracker.critical_count,
+        }
+
+    @app.get("/devices")
+    async def list_devices() -> list[dict[str, Any]]:
+        devices = device_manager.list_devices()
+        return [
+            {
+                "name": d.name,
+                "host": d.host,
+                "status": d.status.value,
+                "model": d.model,
+                "version": d.version,
+                "serial": d.serial,
+                "uptime": d.uptime,
+                "last_check": d.last_check.isoformat() if d.last_check else None,
+            }
+            for d in devices
+        ]
+
+    @app.get("/findings")
+    async def get_findings(
+        device: str | None = None,
+        severity: str | None = None,
+        category: str | None = None,
+        include_resolved: bool = False,
+    ) -> list[dict[str, Any]]:
+        if include_resolved:
+            findings = await findings_tracker.get_history(
+                device=device, include_resolved=True,
+            )
+        else:
+            sev = Severity(severity) if severity else None
+            findings = findings_tracker.get_active(
+                device=device, severity=sev, category=category,
+            )
+        return [f.to_dict() for f in findings]
+
+    @app.post("/chat", response_model=ChatResponse)
+    async def chat(request: ChatRequest) -> ChatResponse:
+        response = await agent.handle_user_input(request.message)
+        return ChatResponse(response=response)
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket) -> None:
+        await websocket.accept()
+        ws_clients.append(websocket)
+        try:
+            while True:
+                # Keep connection alive, handle incoming messages
+                data = await websocket.receive_text()
+                # Process as chat message
+                response = await agent.handle_user_input(data)
+                await websocket.send_text(json.dumps({
+                    "type": "chat_response",
+                    "response": response,
+                }))
+        except WebSocketDisconnect:
+            ws_clients.remove(websocket)
+
+    return app
