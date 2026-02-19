@@ -33,3 +33,9 @@ api:
 
 storage:
   path: ~/.jace/            # findings DB, state, logs
+
+metrics:
+  retention_days: 30
+  anomaly_z_threshold: 3.0
+  anomaly_window_hours: 24
+  anomaly_min_samples: 10

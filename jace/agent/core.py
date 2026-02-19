@@ -6,14 +6,17 @@ import json
 import logging
 from typing import Any, Callable, Awaitable
 
+from jace.agent.anomaly import AnomalyDetector
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
+from jace.agent.metrics_store import MetricPoint, MetricsStore
 from jace.agent.scheduler import Scheduler
 from jace.checks.registry import CheckRegistry
 from jace.config.settings import Settings
 from jace.device.manager import DeviceManager
 from jace.llm.base import LLMClient, Message, Response, Role, ToolCall
 from jace.llm.tools import AGENT_TOOLS
+from jace.metrics import EXTRACTORS
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +68,16 @@ class AgentCore:
     def __init__(self, settings: Settings, llm: LLMClient,
                  device_manager: DeviceManager,
                  check_registry: CheckRegistry,
-                 findings_tracker: FindingsTracker) -> None:
+                 findings_tracker: FindingsTracker,
+                 metrics_store: MetricsStore | None = None,
+                 anomaly_detector: AnomalyDetector | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
         self._registry = check_registry
         self._findings = findings_tracker
+        self._metrics_store = metrics_store
+        self._anomaly_detector = anomaly_detector
         self._scheduler = Scheduler(settings.schedule)
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
@@ -108,6 +115,11 @@ class AgentCore:
         if not results:
             return
 
+        # Extract metrics and check for anomalies
+        anomaly_context = await self._extract_and_check_metrics(
+            category, device_name, results,
+        )
+
         # Format data for LLM analysis
         data_parts = []
         for cmd, result in results.items():
@@ -115,6 +127,8 @@ class AgentCore:
             data_parts.append(f"--- {cmd} [{status}] ---\n{result.output}\n")
 
         data_text = "\n".join(data_parts)
+        if anomaly_context:
+            data_text += f"\n--- Anomaly Detection ---\n{anomaly_context}\n"
         prompt = ANALYSIS_PROMPT_TEMPLATE.format(
             device=device_name, category=category, data=data_text,
         )
@@ -165,6 +179,60 @@ class AgentCore:
         for finding in resolved:
             if self._notify_callback:
                 await self._notify_callback(finding, False)
+
+    async def _extract_and_check_metrics(
+        self, category: str, device_name: str,
+        results: dict[str, Any],
+    ) -> str:
+        """Extract metrics from results, store them, and check for anomalies."""
+        if not self._metrics_store:
+            return ""
+
+        extractor = EXTRACTORS.get(category)
+        if not extractor:
+            return ""
+
+        try:
+            extracted = extractor(results)
+        except Exception as exc:
+            logger.error("Metric extraction failed for %s/%s: %s",
+                         category, device_name, exc)
+            return ""
+
+        if not extracted:
+            return ""
+
+        points: list[MetricPoint] = []
+        for em in extracted:
+            point = MetricPoint(
+                device=device_name, category=category,
+                metric=em.metric, value=em.value,
+                unit=em.unit, tags=em.tags,
+            )
+            points.append(point)
+
+            # For counters, compute delta from previous value
+            if em.is_counter:
+                prev = await self._metrics_store.latest(device_name, em.metric)
+                if prev is not None:
+                    delta = max(0.0, em.value - prev.value)
+                    delta_point = MetricPoint(
+                        device=device_name, category=category,
+                        metric=f"{em.metric}_delta", value=delta,
+                        unit=em.unit, tags=em.tags,
+                    )
+                    points.append(delta_point)
+
+        await self._metrics_store.record_many(points)
+
+        # Check for anomalies
+        if not self._anomaly_detector:
+            return ""
+
+        anomalies = await self._anomaly_detector.check_many(device_name, points)
+        if anomalies:
+            return "\n".join(a.to_context_line() for a in anomalies)
+        return ""
 
     async def _llm_tool_loop(self, ctx: ConversationContext,
                              max_iterations: int = 10) -> str:
@@ -249,6 +317,24 @@ class AgentCore:
                 if findings:
                     return json.dumps([f.to_dict() for f in findings], indent=2)
                 return "Health check completed. No issues found."
+
+            elif name == "get_metrics":
+                if not self._metrics_store:
+                    return "Metrics store not configured."
+                device = args["device"]
+                metric = args.get("metric")
+                if not metric:
+                    names = await self._metrics_store.list_metrics(device)
+                    if not names:
+                        return "No metrics recorded for this device yet."
+                    return json.dumps(names, indent=2)
+                since = args.get("since_hours", 24)
+                points = await self._metrics_store.query(
+                    device, metric, since_hours=since,
+                )
+                if not points:
+                    return f"No data for metric '{metric}' in the last {since}h."
+                return json.dumps([p.to_dict() for p in points], indent=2)
 
             elif name == "compare_config":
                 rollback = args.get("rollback", 1)

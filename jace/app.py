@@ -6,8 +6,10 @@ import asyncio
 import logging
 from pathlib import Path
 
+from jace.agent.anomaly import AnomalyDetector
 from jace.agent.core import AgentCore
 from jace.agent.findings import FindingsTracker
+from jace.agent.metrics_store import MetricsStore
 from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
 from jace.device.manager import DeviceManager
@@ -26,12 +28,21 @@ class Application:
         self.llm = create_llm_client(self.settings.llm)
         self.check_registry = build_default_registry()
         self.findings_tracker = FindingsTracker(self.settings.storage_path)
+        self.metrics_store = MetricsStore(self.settings.storage_path)
+        self.anomaly_detector = AnomalyDetector(
+            store=self.metrics_store,
+            z_threshold=self.settings.metrics.anomaly_z_threshold,
+            window_hours=self.settings.metrics.anomaly_window_hours,
+            min_samples=self.settings.metrics.anomaly_min_samples,
+        )
         self.agent = AgentCore(
             settings=self.settings,
             llm=self.llm,
             device_manager=self.device_manager,
             check_registry=self.check_registry,
             findings_tracker=self.findings_tracker,
+            metrics_store=self.metrics_store,
+            anomaly_detector=self.anomaly_detector,
         )
         self._api_server = None
 
@@ -39,8 +50,11 @@ class Application:
         """Initialize and start the application."""
         self._setup_logging()
 
-        # Initialize findings storage
+        # Initialize storage
         await self.findings_tracker.initialize()
+        await self.metrics_store.initialize(
+            retention_days=self.settings.metrics.retention_days,
+        )
 
         # Add and connect devices
         for dev_config in self.settings.devices:
@@ -72,6 +86,7 @@ class Application:
         await self.agent.stop_monitoring()
         await self.device_manager.disconnect_all()
         await self.findings_tracker.close()
+        await self.metrics_store.close()
         if self._api_server:
             self._api_server.should_exit = True
         logger.info("Shutdown complete.")

@@ -58,6 +58,13 @@ class ScheduleConfig(BaseModel):
     config: int = 3600
 
 
+class MetricsConfig(BaseModel):
+    retention_days: int = 30
+    anomaly_z_threshold: float = 3.0
+    anomaly_window_hours: int = 24
+    anomaly_min_samples: int = 10
+
+
 class APIConfig(BaseModel):
     enabled: bool = False
     host: str = "127.0.0.1"
@@ -74,6 +81,7 @@ class Settings(BaseModel):
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
 
     @property
     def storage_path(self) -> Path:

@@ -133,6 +133,32 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="get_metrics",
+        description=(
+            "Retrieve time-series metrics for a device. "
+            "Omit the 'metric' parameter to list all available metric names. "
+            "Provide a metric name to get its recent values."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string",
+                    "description": "Name of the target device",
+                },
+                "metric": {
+                    "type": "string",
+                    "description": "Metric name to query (omit to list available metrics)",
+                },
+                "since_hours": {
+                    "type": "integer",
+                    "description": "How many hours of history to retrieve (default: 24)",
+                },
+            },
+            "required": ["device"],
+        },
+    ),
+    ToolDefinition(
         name="compare_config",
         description=(
             "Compare the current device configuration against a previous "
