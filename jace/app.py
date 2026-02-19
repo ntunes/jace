@@ -24,7 +24,9 @@ class Application:
 
     def __init__(self, config_path: str | Path | None = None) -> None:
         self.settings = load_config(config_path)
-        self.device_manager = DeviceManager()
+        self.device_manager = DeviceManager(
+            blocked_commands=self.settings.blocked_commands,
+        )
         self.llm = create_llm_client(self.settings.llm)
         self.check_registry = build_default_registry()
         self.findings_tracker = FindingsTracker(self.settings.storage_path)

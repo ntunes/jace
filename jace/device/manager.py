@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from fnmatch import fnmatch
 
 from jace.config.settings import DeviceConfig
 from jace.device.base import DeviceDriver
@@ -17,11 +18,12 @@ logger = logging.getLogger(__name__)
 class DeviceManager:
     """Manages connections to multiple Junos devices."""
 
-    def __init__(self) -> None:
+    def __init__(self, blocked_commands: list[str] | None = None) -> None:
         self._devices: dict[str, DeviceConfig] = {}
         self._drivers: dict[str, DeviceDriver] = {}
         self._fallback_drivers: dict[str, DeviceDriver] = {}
         self._info: dict[str, DeviceInfo] = {}
+        self._blocked_commands = [p.strip().lower() for p in (blocked_commands or [])]
 
     def add_device(self, config: DeviceConfig) -> None:
         self._devices[config.name] = config
@@ -100,8 +102,20 @@ class DeviceManager:
         if device_name in self._info:
             self._info[device_name].status = DeviceStatus.DISCONNECTED
 
+    def _is_blocked(self, command: str) -> bool:
+        """Check if a command matches any blocked pattern."""
+        normalized = command.strip().lower()
+        return any(fnmatch(normalized, pattern) for pattern in self._blocked_commands)
+
     async def run_command(self, device_name: str, command: str) -> CommandResult:
         """Run a command on a device, with fallback to Netmiko if PyEZ fails."""
+        if self._is_blocked(command):
+            logger.warning("Blocked command: %s", command)
+            return CommandResult(
+                command=command, output="", success=False,
+                error=f"Command blocked by policy: {command}",
+            )
+
         driver = self._drivers.get(device_name)
         if driver is None:
             return CommandResult(

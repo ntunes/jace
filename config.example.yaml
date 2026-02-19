@@ -39,3 +39,11 @@ metrics:
   anomaly_z_threshold: 3.0
   anomaly_window_hours: 24
   anomaly_min_samples: 10
+
+blocked_commands:
+  - "request *"
+  - "clear *"
+  - "set *"
+  - "delete *"
+  - "activate *"
+  - "deactivate *"

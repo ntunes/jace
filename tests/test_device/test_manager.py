@@ -1,5 +1,7 @@
 """Tests for device manager."""
 
+import pytest
+
 from jace.config.settings import DeviceConfig
 from jace.device.manager import DeviceManager
 from jace.device.models import DeviceStatus
@@ -31,3 +33,61 @@ def test_get_device_info():
     assert info.host == "10.0.0.1"
 
     assert mgr.get_device_info("nonexistent") is None
+
+
+# --- Blocklist tests ---
+
+class TestBlocklist:
+    """Tests for command blocklist enforcement."""
+
+    def test_is_blocked_exact_match(self):
+        mgr = DeviceManager(blocked_commands=["clear bgp neighbor all"])
+        assert mgr._is_blocked("clear bgp neighbor all") is True
+
+    def test_is_blocked_wildcard(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        assert mgr._is_blocked("request system reboot") is True
+        assert mgr._is_blocked("request system halt") is True
+
+    def test_is_blocked_no_match(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        assert mgr._is_blocked("show interfaces") is False
+        assert mgr._is_blocked("show route") is False
+
+    def test_is_blocked_case_insensitive(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        assert mgr._is_blocked("Request System Reboot") is True
+        assert mgr._is_blocked("REQUEST SYSTEM HALT") is True
+
+    def test_is_blocked_strips_whitespace(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        assert mgr._is_blocked("  request system reboot  ") is True
+
+    def test_is_blocked_empty_blocklist(self):
+        mgr = DeviceManager(blocked_commands=[])
+        assert mgr._is_blocked("request system reboot") is False
+
+    def test_is_blocked_none_blocklist(self):
+        mgr = DeviceManager()
+        assert mgr._is_blocked("request system reboot") is False
+
+    def test_is_blocked_multiple_patterns(self):
+        mgr = DeviceManager(blocked_commands=["request *", "clear *", "set *"])
+        assert mgr._is_blocked("request system reboot") is True
+        assert mgr._is_blocked("clear bgp neighbor all") is True
+        assert mgr._is_blocked("set interfaces ge-0/0/0 disable") is True
+        assert mgr._is_blocked("show bgp summary") is False
+
+    @pytest.mark.asyncio
+    async def test_run_command_blocked(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        result = await mgr.run_command("r1", "request system reboot")
+        assert result.success is False
+        assert "blocked by policy" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_run_command_not_blocked_but_disconnected(self):
+        mgr = DeviceManager(blocked_commands=["request *"])
+        result = await mgr.run_command("r1", "show interfaces")
+        assert result.success is False
+        assert "not connected" in result.error.lower()
