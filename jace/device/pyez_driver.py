@@ -101,9 +101,15 @@ class PyEZDriver(DeviceDriver):
                 result = await loop.run_in_executor(
                     _executor, partial(rpc_func, **rpc_kwargs)
                 )
-                output_str = _xml_to_str(result) if isinstance(result, ET.Element) else str(result)
+                if isinstance(result, ET.Element):
+                    output_str = _xml_to_str(result)
+                    structured = result
+                else:
+                    output_str = str(result)
+                    structured = None
                 return CommandResult(
                     command=command, output=output_str,
+                    structured=structured,
                     driver_used="pyez", success=True,
                 )
             except Exception as exc:

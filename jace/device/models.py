@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 
 class DriverType(str, Enum):
@@ -24,7 +25,7 @@ class DeviceStatus(str, Enum):
 class CommandResult:
     command: str
     output: str
-    structured: dict | None = None
+    structured: Any = None  # ET.Element from PyEZ RPC, or dict
     driver_used: str = ""
     success: bool = True
     error: str | None = None
