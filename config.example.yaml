@@ -26,7 +26,7 @@ schedule:
   interfaces: 120
   routing:    180
   system:     300
-  config:     3600
+  config:     86400  # once per day
 
 api:
   enabled: false

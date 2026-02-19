@@ -57,7 +57,7 @@ class ScheduleConfig(BaseModel):
     interfaces: int = 120
     routing: int = 180
     system: int = 300
-    config: int = 3600
+    config: int = 86400
 
 
 class MetricsConfig(BaseModel):

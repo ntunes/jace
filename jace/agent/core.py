@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Callable, Awaitable
 
-from jace.agent.anomaly import AnomalyDetector
+from jace.agent.anomaly import AnomalyDetector, AnomalyResult
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.agent.metrics_store import MetricPoint, MetricsStore
@@ -56,6 +56,32 @@ If no issues are found, return an empty array: []
 
 Raw data:
 {data}\
+"""
+
+ANOMALY_PROMPT_TEMPLATE = """\
+Statistical anomalies detected on device '{device}' ({category} check).
+
+Detected anomalies:
+{anomalies}
+
+Raw command output:
+{data}
+
+First, review the data above and decide whether the anomalies can already be \
+explained as benign (e.g. a scheduled maintenance window, a counter reset, or \
+normal daily variance). If so, return an empty JSON array: []
+
+Otherwise, troubleshoot by running commands on the device. Suggested sequence:
+1. Use run_command to gather correlated counters or logs \
+(e.g. "show log messages", "show interfaces diagnostics optics", etc.)
+2. Use get_config to check whether a recent config change could explain the shift.
+3. Use get_metrics to pull historical trends for the affected metrics.
+
+After investigating, respond with a JSON array of findings:
+- severity: "critical", "warning", or "info"
+- title: short summary (one line)
+- detail: explanation including evidence from the commands you ran
+- recommendation: suggested action to resolve\
 """
 
 # Notification callback type
@@ -115,25 +141,41 @@ class AgentCore:
         if not results:
             return
 
-        # Extract metrics and check for anomalies
-        anomaly_context = await self._extract_and_check_metrics(
+        # Always extract metrics and check anomalies (builds baseline)
+        anomalies = await self._extract_and_check_metrics(
             category, device_name, results,
         )
 
-        # Format data for LLM analysis
+        # Format raw data
         data_parts = []
         for cmd, result in results.items():
             status = "SUCCESS" if result.success else f"FAILED: {result.error}"
             data_parts.append(f"--- {cmd} [{status}] ---\n{result.output}\n")
-
         data_text = "\n".join(data_parts)
-        if anomaly_context:
-            data_text += f"\n--- Anomaly Detection ---\n{anomaly_context}\n"
-        prompt = ANALYSIS_PROMPT_TEMPLATE.format(
-            device=device_name, category=category, data=data_text,
-        )
 
-        # Use a separate context for background analysis
+        # Decide whether to call the LLM
+        has_extractor = category in EXTRACTORS
+
+        if has_extractor and not anomalies:
+            # Normal — log status and skip LLM
+            logger.info("%s check on %s: Normal", category, device_name)
+            return
+
+        # Anomalies detected or non-metric category (config) — call LLM
+        if anomalies:
+            logger.info("%s check on %s: %d anomaly(s) detected",
+                        category, device_name, len(anomalies))
+            anomaly_text = "\n".join(a.to_context_line() for a in anomalies)
+            prompt = ANOMALY_PROMPT_TEMPLATE.format(
+                device=device_name, category=category,
+                anomalies=anomaly_text, data=data_text,
+            )
+        else:
+            # Config category — use general template
+            prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+                device=device_name, category=category, data=data_text,
+            )
+
         ctx = ConversationContext()
         ctx.add_user(prompt)
 
@@ -183,24 +225,24 @@ class AgentCore:
     async def _extract_and_check_metrics(
         self, category: str, device_name: str,
         results: dict[str, Any],
-    ) -> str:
+    ) -> list[AnomalyResult]:
         """Extract metrics from results, store them, and check for anomalies."""
         if not self._metrics_store:
-            return ""
+            return []
 
         extractor = EXTRACTORS.get(category)
         if not extractor:
-            return ""
+            return []
 
         try:
             extracted = extractor(results)
         except Exception as exc:
             logger.error("Metric extraction failed for %s/%s: %s",
                          category, device_name, exc)
-            return ""
+            return []
 
         if not extracted:
-            return ""
+            return []
 
         points: list[MetricPoint] = []
         for em in extracted:
@@ -227,12 +269,10 @@ class AgentCore:
 
         # Check for anomalies
         if not self._anomaly_detector:
-            return ""
+            return []
 
         anomalies = await self._anomaly_detector.check_many(device_name, points)
-        if anomalies:
-            return "\n".join(a.to_context_line() for a in anomalies)
-        return ""
+        return anomalies
 
     async def _llm_tool_loop(self, ctx: ConversationContext,
                              max_iterations: int = 10) -> str:
