@@ -156,13 +156,14 @@ class InteractiveShell:
                 )
                 return
             device_name, category = parts[1], parts[2]
-            self._console.print(
-                f"[dim]Running {category} check on {device_name}...[/dim]"
-            )
             try:
-                response = await self._agent.handle_user_input(
-                    f"Run a {category} health check on {device_name} and report the results."
-                )
+                with self._console.status(
+                    f"[dim]Running {category} check on {device_name}...[/dim]",
+                    spinner="dots",
+                ):
+                    response = await self._agent.handle_user_input(
+                        f"Run a {category} health check on {device_name} and report the results."
+                    )
                 self._console.print(Markdown(response))
             except Exception as exc:
                 self._console.print(f"[red]Error: {exc}[/red]")
@@ -172,9 +173,9 @@ class InteractiveShell:
 
     async def _handle_query(self, text: str) -> None:
         """Send a natural language query to the agent."""
-        self._console.print("[dim]Thinking...[/dim]")
         try:
-            response = await self._agent.handle_user_input(text)
+            with self._console.status("[dim]Thinking...[/dim]", spinner="dots"):
+                response = await self._agent.handle_user_input(text)
             self._console.print()
             self._console.print(Markdown(response))
             self._console.print()
