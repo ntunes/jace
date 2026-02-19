@@ -6,12 +6,15 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from xml.etree import ElementTree as ET
-
 from jace.device.base import DeviceDriver
 from jace.device.models import CommandResult
 
 logger = logging.getLogger(__name__)
+
+try:
+    from lxml import etree as lxml_etree
+except ImportError:
+    lxml_etree = None  # type: ignore[assignment]
 
 # Maps CLI commands to PyEZ RPC method names and kwargs
 RPC_MAP: dict[str, tuple[str, dict]] = {
@@ -41,8 +44,11 @@ RPC_MAP: dict[str, tuple[str, dict]] = {
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
-def _xml_to_str(element: ET.Element) -> str:
+def _xml_to_str(element: object) -> str:
     """Convert an XML element to a pretty-printed string."""
+    if lxml_etree is not None:
+        return lxml_etree.tostring(element, encoding="unicode", pretty_print=True)
+    from xml.etree import ElementTree as ET
     return ET.tostring(element, encoding="unicode")
 
 
@@ -101,7 +107,7 @@ class PyEZDriver(DeviceDriver):
                 result = await loop.run_in_executor(
                     _executor, partial(rpc_func, **rpc_kwargs)
                 )
-                if isinstance(result, ET.Element):
+                if hasattr(result, 'tag'):
                     output_str = _xml_to_str(result)
                     structured = result
                 else:
@@ -151,7 +157,7 @@ class PyEZDriver(DeviceDriver):
                 _executor,
                 partial(self._dev.rpc.get_config, **options),
             )
-            if isinstance(result, ET.Element):
+            if hasattr(result, 'tag'):
                 return _xml_to_str(result)
             return str(result)
         except Exception as exc:
