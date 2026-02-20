@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from rich.panel import Panel
@@ -94,6 +95,7 @@ class JaceApp(App):
         self._device_manager = device_manager
         self._findings_tracker = findings_tracker
         self._log_handler: TextualLogHandler | None = None
+        self._pending_approval: asyncio.Future[bool] | None = None
 
     # ── Layout ──────────────────────────────────────────────────────────
 
@@ -128,6 +130,9 @@ class JaceApp(App):
         # Register notification callback
         self._agent.set_notify_callback(self._on_finding)
 
+        # Register shell approval callback
+        self._agent.set_approval_callback(self._request_shell_approval)
+
         # Start sidebar refresh timer
         self.set_interval(SIDEBAR_REFRESH_SECONDS, self._refresh_sidebar)
 
@@ -151,6 +156,12 @@ class JaceApp(App):
         if not text:
             return
         event.input.clear()
+
+        # Intercept approval responses
+        if self._pending_approval is not None:
+            approved = text.lower().startswith("y")
+            self._pending_approval.set_result(approved)
+            return
 
         # Auto-switch to Chat tab when submitting a query
         tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
@@ -177,6 +188,31 @@ class JaceApp(App):
         except Exception as exc:
             chat.hide_thinking()
             chat.write(Text(f"Error: {exc}", style="red"))
+
+    # ── Shell approval ────────────────────────────────────────────────
+
+    async def _request_shell_approval(self, command: str, reason: str) -> bool:
+        """Show an approval prompt and wait for the user to type y/n."""
+        chat: ChatView = self.query_one("#chat-view")
+        chat_input: ChatInput = self.query_one("#chat-input")
+
+        chat.add_approval_prompt(command, reason)
+
+        # Store original placeholder and set approval prompt
+        original_placeholder = chat_input.placeholder
+        chat_input.placeholder = "Type y to approve or n to deny..."
+
+        loop = asyncio.get_running_loop()
+        self._pending_approval = loop.create_future()
+
+        try:
+            result = await self._pending_approval
+        finally:
+            self._pending_approval = None
+            chat_input.placeholder = original_placeholder
+
+        chat.add_approval_result(result)
+        return result
 
     # ── Slash commands ──────────────────────────────────────────────────
 

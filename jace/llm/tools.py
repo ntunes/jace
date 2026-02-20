@@ -332,4 +332,31 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "required": ["category"],
         },
     ),
+    ToolDefinition(
+        name="run_shell",
+        description=(
+            "Run a shell command on the operator's local machine for network "
+            "troubleshooting. Useful for: ping, traceroute, dig, nslookup, "
+            "curl, nc, ssh, cat/head of config files (e.g. ~/.ssh/config), "
+            "ip/ifconfig, netstat/ss, host, mtr, arp, route. "
+            "Every command requires explicit user approval before execution. "
+            "Destructive or administrative commands are blocked."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to run",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "Brief explanation of why this command is needed"
+                    ),
+                },
+            },
+            "required": ["command", "reason"],
+        },
+    ),
 ]

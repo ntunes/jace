@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shlex
 from typing import Any, Callable, Awaitable
 
 from jace.agent.accumulator import AnomalyAccumulator, AnomalyBatch
@@ -50,6 +51,11 @@ When responding to user queries:
 
 You have access to tools for running commands on Junos devices, retrieving \
 configurations, and checking findings from health monitors.
+
+You can also run shell commands on the operator's local machine using run_shell \
+for network troubleshooting (ping, traceroute, dig, ssh, reading config files, \
+etc.). Every command requires explicit user approval. Always provide a clear \
+reason explaining why you need to run the command.
 
 You also have persistent memory across sessions. Use save_memory to store \
 important observations (device quirks, baselines, operator preferences, \
@@ -205,6 +211,18 @@ Be concise — this summary will replace older messages to free context space.\
 # Notification callback type
 NotifyCallback = Callable[[Finding, bool], Awaitable[None]]  # (finding, is_new)
 
+# Approval callback type: (command, reason) → approved
+ApprovalCallback = Callable[[str, str], Awaitable[bool]]
+
+# Shell command blocklist — prefixes/keywords that are never allowed
+SHELL_BLOCKED_PATTERNS: list[str] = [
+    "sudo", "rm", "reboot", "shutdown", "halt", "poweroff", "mkfs", "dd",
+    "mv", "cp", "chmod", "chown", "kill", "killall", "pkill", "systemctl",
+    "service", "apt", "yum", "brew", "pip", "npm", "docker", "kubectl",
+]
+
+SHELL_COMMAND_TIMEOUT = 60
+
 
 class AgentCore:
     """Main agent — runs background health checks and handles interactive queries."""
@@ -235,10 +253,14 @@ class AgentCore:
         self._scheduler = Scheduler(settings.schedule)
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
+        self._approval_callback: ApprovalCallback | None = None
         self._heartbeat_task: asyncio.Task | None = None
 
     def set_notify_callback(self, callback: NotifyCallback) -> None:
         self._notify_callback = callback
+
+    def set_approval_callback(self, callback: ApprovalCallback) -> None:
+        self._approval_callback = callback
 
     def start_monitoring(self) -> None:
         """Start the background health check scheduler."""
@@ -697,6 +719,22 @@ class AgentCore:
 
         return "Maximum tool iterations reached."
 
+    @staticmethod
+    def _is_shell_blocked(command: str) -> str | None:
+        """Return a reason string if the command is blocked, else None."""
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            tokens = command.split()
+        for token in tokens:
+            # Strip leading path (e.g. /usr/bin/sudo → sudo)
+            base = token.rsplit("/", 1)[-1]
+            for pattern in SHELL_BLOCKED_PATTERNS:
+                # Match exact name or name prefix (e.g. mkfs.ext4 matches mkfs)
+                if base == pattern or base.startswith(pattern + "."):
+                    return f"Blocked command: '{pattern}' is not allowed."
+        return None
+
     async def _execute_tool(self, tool_call: ToolCall) -> str:
         """Execute a tool call and return the result as a string."""
         name = tool_call.name
@@ -859,6 +897,45 @@ class AgentCore:
                 return self._memory_store.read(
                     args["category"], args.get("key"),
                 )
+
+            elif name == "run_shell":
+                command = args["command"]
+                reason = args.get("reason", "")
+
+                blocked = self._is_shell_blocked(command)
+                if blocked:
+                    return blocked
+
+                if not self._approval_callback:
+                    return "Shell commands require an interactive session."
+
+                approved = await self._approval_callback(command, reason)
+                if not approved:
+                    return "Command denied by user."
+
+                try:
+                    proc = await asyncio.create_subprocess_shell(
+                        command,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await asyncio.wait_for(
+                        proc.communicate(), timeout=SHELL_COMMAND_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    return "Command timed out after 60 seconds."
+
+                output = ""
+                if stdout:
+                    output += stdout.decode(errors="replace")
+                if stderr:
+                    output += stderr.decode(errors="replace")
+
+                # Truncate to 50 KB
+                if len(output) > 50_000:
+                    output = output[:50_000] + "\n... (output truncated)"
+
+                return output or "(no output)"
 
             else:
                 return f"Unknown tool: {name}"

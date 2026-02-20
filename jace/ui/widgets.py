@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.text import Text
 from textual.widgets import DataTable, Input, RichLog, Static
 
@@ -126,6 +127,28 @@ class ChatView(RichLog):
         from jace.ui.notifications import render_finding_panel
         panel = render_finding_panel(finding, is_new)
         self.write(panel)
+
+    def add_approval_prompt(self, command: str, reason: str) -> None:
+        """Render a shell approval request in the chat."""
+        body = Text()
+        body.append("jace wants to run:\n", style="bold yellow")
+        body.append(f"  $ {command}\n", style="bold white")
+        if reason:
+            body.append(f"  Reason: {reason}\n", style="dim")
+        body.append("Type ", style="yellow")
+        body.append("y", style="bold green")
+        body.append(" to approve or ", style="yellow")
+        body.append("n", style="bold red")
+        body.append(" to deny.", style="yellow")
+        panel = Panel(body, border_style="yellow", title="[shell]")
+        self.write(panel)
+
+    def add_approval_result(self, approved: bool) -> None:
+        """Show the approval decision inline."""
+        if approved:
+            self.write(Text("  Approved", style="bold green"))
+        else:
+            self.write(Text("  Denied", style="bold red"))
 
 
 class ChatInput(Input):
