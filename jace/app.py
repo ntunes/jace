@@ -163,9 +163,12 @@ class Application:
     def _setup_logging(self) -> None:
         # Set level only — TUI installs its own handler in on_mount()
         logging.root.setLevel(logging.INFO)
-        # Quiet noisy libraries
-        logging.getLogger("paramiko").setLevel(logging.WARNING)
-        logging.getLogger("ncclient").setLevel(logging.WARNING)
-        logging.getLogger("netmiko").setLevel(logging.WARNING)
+        # Quiet noisy libraries — JACE wraps all calls in try/except and
+        # provides its own error messages, so internal SSH tracebacks from
+        # paramiko/ncclient/netmiko only add noise (especially before the TUI
+        # installs its log handler, when they leak to stderr).
+        logging.getLogger("paramiko").setLevel(logging.CRITICAL)
+        logging.getLogger("ncclient").setLevel(logging.CRITICAL)
+        logging.getLogger("netmiko").setLevel(logging.CRITICAL)
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("openai").setLevel(logging.WARNING)
