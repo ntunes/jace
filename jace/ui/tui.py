@@ -161,7 +161,7 @@ class JACE(App):
     async def _connect_and_start(self) -> None:
         """Connect to devices and start monitoring in the background."""
         logger.info("Connecting to devices...")
-        await self._device_manager.connect_all()
+        await self._device_manager.connect_all(on_connect=self._refresh_sidebar)
         connected = self._device_manager.get_connected_devices()
         logger.info("Connected to %d device(s): %s", len(connected), connected)
         self._refresh_sidebar()

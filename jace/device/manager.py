@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from fnmatch import fnmatch
@@ -39,9 +40,16 @@ class DeviceManager:
             name=config.name, host=config.host,
         )
 
-    async def connect_all(self) -> None:
-        for name in self._devices:
-            await self.connect(name)
+    async def connect_all(self, on_connect: object = None) -> None:
+        sem = asyncio.Semaphore(5)
+
+        async def _connect_one(name: str) -> None:
+            async with sem:
+                await self.connect(name)
+            if on_connect is not None:
+                on_connect()
+
+        await asyncio.gather(*(_connect_one(n) for n in self._devices))
 
     async def connect(self, device_name: str) -> bool:
         config = self._devices.get(device_name)
