@@ -53,6 +53,34 @@ def _xml_to_str(element: object) -> str:
     return ET.tostring(element, encoding="unicode")
 
 
+def _extract_config_text(element: object, format: str) -> str:
+    """Extract config content from a PyEZ get_config RPC response.
+
+    PyEZ always returns an lxml element.  For ``format="text"`` the actual
+    curly-brace config is inside ``<configuration-text>``, and for
+    ``format="set"`` it is inside ``<configuration-set>``.  Only for
+    ``format="xml"`` do we serialise the XML tree directly.
+    """
+    if format == "xml" or not hasattr(element, 'tag'):
+        if hasattr(element, 'tag'):
+            return _xml_to_str(element)
+        return str(element)
+
+    # text / set — look for the text payload inside the wrapper element
+    tag = "configuration-text" if format == "text" else "configuration-set"
+    if hasattr(element, 'find'):
+        child = element.find(f".//{tag}")  # type: ignore[union-attr]
+        if child is not None and child.text:
+            return child.text
+
+    # Some PyEZ versions put the text directly on the root element
+    if hasattr(element, 'text') and element.text and element.text.strip():  # type: ignore[union-attr]
+        return element.text  # type: ignore[union-attr]
+
+    # Last resort — serialise as XML so we return *something*
+    return _xml_to_str(element)
+
+
 class PyEZDriver(DeviceDriver):
     """Junos device driver using PyEZ (NETCONF)."""
 
@@ -148,9 +176,12 @@ class PyEZDriver(DeviceDriver):
         loop = asyncio.get_running_loop()
         try:
             if section:
+                cmd = f"show configuration {section}"
+                if format == "set":
+                    cmd += " | display set"
                 result = await loop.run_in_executor(
                     _executor,
-                    partial(self._dev.cli, f"show configuration {section}", warning=False),
+                    partial(self._dev.cli, cmd, warning=False),
                 )
                 return str(result)
             options: dict = {"format": format}
@@ -158,9 +189,7 @@ class PyEZDriver(DeviceDriver):
                 _executor,
                 partial(self._dev.rpc.get_config, **options),
             )
-            if hasattr(result, 'tag'):
-                return _xml_to_str(result)
-            return str(result)
+            return _extract_config_text(result, format)
         except Exception as exc:
             logger.error("PyEZ get_config failed: %s", exc)
             return f"Error: {exc}"
