@@ -91,18 +91,36 @@ class FindingsTable(DataTable):
 class ChatView(RichLog):
     """Scrollable chat log with convenience methods for message types."""
 
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._thinking_start: int | None = None
+
     def add_user_message(self, text: str) -> None:
         line = Text()
-        line.append("jace> ", style="bold cyan")
+        line.append("user> ", style="bold cyan")
         line.append(text)
         self.write(line)
 
     def add_agent_response(self, markdown_text: str) -> None:
+        label = Text()
+        label.append("jace> ", style="bold green")
+        self.write(label)
         self.write(Markdown(markdown_text))
         self.write(Text(""))  # blank separator line
 
     def add_system_message(self, text: str) -> None:
         self.write(Text(text, style="dim"))
+
+    def show_thinking(self) -> None:
+        self._thinking_start = len(self.lines)
+        self.add_system_message("Thinking...")
+
+    def hide_thinking(self) -> None:
+        if self._thinking_start is not None:
+            del self.lines[self._thinking_start:]
+            self.virtual_size = self.virtual_size.with_height(len(self.lines))
+            self._thinking_start = None
+            self.refresh()
 
     def show_finding_alert(self, finding: Finding, is_new: bool) -> None:
         from jace.ui.notifications import render_finding_panel

@@ -168,12 +168,14 @@ class JaceApp(App):
         """Send a natural language query to the agent."""
         chat: ChatView = self.query_one("#chat-view")
         chat.add_user_message(text)
-        chat.add_system_message("Thinking...")
+        chat.show_thinking()
 
         try:
             response = await self._agent.handle_user_input(text)
+            chat.hide_thinking()
             chat.add_agent_response(response)
         except Exception as exc:
+            chat.hide_thinking()
             chat.write(Text(f"Error: {exc}", style="red"))
 
     # ── Slash commands ──────────────────────────────────────────────────
