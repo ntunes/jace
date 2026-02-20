@@ -52,6 +52,10 @@ memory:
   max_file_size: 8000    # max chars per memory file
   max_total_size: 24000  # max chars injected into system prompt
 
+correlation:
+  enabled: true
+  window_seconds: 30.0    # batch anomalies per device over this window
+
 blocked_commands:
   - "request *"
   - "clear *"

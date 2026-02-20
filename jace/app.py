@@ -6,6 +6,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from jace.agent.accumulator import AnomalyAccumulator
 from jace.agent.anomaly import AnomalyDetector
 from jace.agent.core import AgentCore
 from jace.agent.findings import FindingsTracker
@@ -61,6 +62,13 @@ class Application:
             )
             self.memory_store.initialize()
 
+        # Anomaly accumulator (optional — batches cross-category anomalies)
+        self.anomaly_accumulator: AnomalyAccumulator | None = None
+        if self.settings.correlation.enabled:
+            self.anomaly_accumulator = AnomalyAccumulator(
+                window_seconds=self.settings.correlation.window_seconds,
+            )
+
         self.agent = AgentCore(
             settings=self.settings,
             llm=self.llm,
@@ -71,6 +79,7 @@ class Application:
             anomaly_detector=self.anomaly_detector,
             heartbeat_manager=self.heartbeat_manager,
             memory_store=self.memory_store,
+            anomaly_accumulator=self.anomaly_accumulator,
         )
         self._api_server = None
 

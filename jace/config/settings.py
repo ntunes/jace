@@ -79,6 +79,11 @@ class HeartbeatConfig(BaseModel):
     file: str = "heartbeat.md"
 
 
+class CorrelationConfig(BaseModel):
+    enabled: bool = True
+    window_seconds: float = 30.0
+
+
 class APIConfig(BaseModel):
     enabled: bool = False
     host: str = "127.0.0.1"
@@ -98,6 +103,7 @@ class Settings(BaseModel):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    correlation: CorrelationConfig = Field(default_factory=CorrelationConfig)
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
 

@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Any, Callable, Awaitable
 
+from jace.agent.accumulator import AnomalyAccumulator, AnomalyBatch
 from jace.agent.anomaly import AnomalyDetector, AnomalyResult
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
@@ -54,6 +55,10 @@ ANALYSIS_PROMPT_TEMPLATE = """\
 Analyze the following health check data from device '{device}' \
 (category: {category}).
 
+Before analyzing, use read_memory to check for known device baselines, \
+previous incidents on this device, or operator preferences that might \
+inform your analysis.
+
 For each issue found, respond with a JSON array of findings. Each finding \
 should have these fields:
 - severity: "critical", "warning", or "info"
@@ -63,6 +68,9 @@ should have these fields:
 
 If no issues are found, return an empty array: []
 
+After analyzing, if you discovered any noteworthy patterns (device quirks, \
+recurring baselines, incident context), use save_memory to persist them.
+
 Raw data:
 {data}\
 """
@@ -70,12 +78,15 @@ Raw data:
 ANOMALY_PROMPT_TEMPLATE = """\
 Statistical anomalies detected on device '{device}' ({category} check).
 
+Before investigating, use read_memory to check for known baselines, \
+previous incidents, or device profiles that might explain these anomalies.
+
 Detected anomalies:
 {anomalies}
 
 Raw command output:
 {data}
-
+{context}\
 First, review the data above and decide whether the anomalies can already be \
 explained as benign (e.g. a scheduled maintenance window, a counter reset, or \
 normal daily variance). If so, return an empty JSON array: []
@@ -90,7 +101,44 @@ After investigating, respond with a JSON array of findings:
 - severity: "critical", "warning", or "info"
 - title: short summary (one line)
 - detail: explanation including evidence from the commands you ran
-- recommendation: suggested action to resolve\
+- recommendation: suggested action to resolve
+
+After investigating, use save_memory to persist any new device baselines, \
+incident patterns, or root cause information you discovered.\
+"""
+
+CORRELATED_ANOMALY_PROMPT_TEMPLATE = """\
+Multiple anomaly categories detected simultaneously on device '{device}' \
+(categories: {categories}).
+
+Before investigating, use read_memory to check for known baselines, \
+previous incidents, or device profiles that might explain these anomalies.
+
+{category_blocks}
+{context}\
+These anomalies fired within a short time window and may share a common root \
+cause. Investigate holistically — look for a single underlying issue before \
+treating them as independent problems.
+
+Troubleshoot by running commands on the device. Suggested sequence:
+1. Use run_command to gather correlated counters or logs \
+(e.g. "show log messages", "show interfaces diagnostics optics", etc.)
+2. Use get_config to check whether a recent config change could explain the shift.
+3. Use get_metrics to pull historical trends for the affected metrics.
+
+After investigating, respond with a JSON array of findings. Each finding \
+must include a "category" field indicating which check category it belongs to \
+(one of: {categories}):
+- category: the check category this finding belongs to
+- severity: "critical", "warning", or "info"
+- title: short summary (one line)
+- detail: explanation including evidence from the commands you ran
+- recommendation: suggested action to resolve
+
+If all anomalies are benign, return an empty JSON array: []
+
+After investigating, use save_memory to persist any new device baselines, \
+incident patterns, or root cause information you discovered.\
 """
 
 HEARTBEAT_PROMPT_TEMPLATE = """\
@@ -144,7 +192,8 @@ class AgentCore:
                  metrics_store: MetricsStore | None = None,
                  anomaly_detector: AnomalyDetector | None = None,
                  heartbeat_manager: HeartbeatManager | None = None,
-                 memory_store: MemoryStore | None = None) -> None:
+                 memory_store: MemoryStore | None = None,
+                 anomaly_accumulator: AnomalyAccumulator | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
@@ -154,6 +203,9 @@ class AgentCore:
         self._anomaly_detector = anomaly_detector
         self._heartbeat_manager = heartbeat_manager
         self._memory_store = memory_store
+        self._accumulator = anomaly_accumulator
+        if self._accumulator is not None:
+            self._accumulator.set_callback(self._investigate_anomaly_batch)
         self._scheduler = Scheduler(settings.schedule)
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
@@ -181,6 +233,8 @@ class AgentCore:
                          self._settings.heartbeat.interval)
 
     async def stop_monitoring(self) -> None:
+        if self._accumulator is not None:
+            await self._accumulator.stop()
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
             try:
@@ -198,7 +252,8 @@ class AgentCore:
         response = await self._llm_tool_loop(self._interactive_ctx)
         return response
 
-    async def _run_check(self, category: str, device_name: str) -> None:
+    async def _run_check(self, category: str, device_name: str,
+                         *, _user_triggered: bool = False) -> None:
         """Run a health check category and analyze results with the LLM."""
         logger.info("Running %s check on %s", category, device_name)
 
@@ -233,10 +288,22 @@ class AgentCore:
         if anomalies:
             logger.info("%s check on %s: %d anomaly(s) detected",
                         category, device_name, len(anomalies))
+
+            # Route through accumulator if available and not user-triggered
+            if self._accumulator is not None and not _user_triggered:
+                await self._accumulator.submit(
+                    device_name, category, anomalies, data_text,
+                )
+                return
+
             anomaly_text = "\n".join(a.to_context_line() for a in anomalies)
+            context = self._gather_investigation_context(
+                device_name, category,
+            )
             prompt = ANOMALY_PROMPT_TEMPLATE.format(
                 device=device_name, category=category,
                 anomalies=anomaly_text, data=data_text,
+                context=context,
             )
         else:
             # Config category — use general template
@@ -253,6 +320,134 @@ class AgentCore:
         except Exception as exc:
             logger.error("LLM analysis failed for %s/%s: %s",
                          category, device_name, exc)
+
+    def _gather_investigation_context(
+        self, device_name: str, category: str | None = None,
+    ) -> str:
+        """Build a context block from active findings on the same device
+        and critical/warning findings fleet-wide.
+
+        When *category* is ``None`` (batch mode), all same-device findings
+        are included.
+        """
+        lines: list[str] = []
+
+        # Same-device findings (exclude current category if specified)
+        same_device = self._findings.get_active(device=device_name)
+        for f in same_device:
+            if category is not None and f.category == category:
+                continue
+            lines.append(
+                f"  [{f.severity.value.upper()}] {f.category}: "
+                f"{f.title} — {f.detail}"
+            )
+
+        # Fleet-wide critical/warning findings on other devices
+        for sev in (Severity.CRITICAL, Severity.WARNING):
+            for f in self._findings.get_active(severity=sev):
+                if f.device == device_name:
+                    continue
+                lines.append(
+                    f"  [{f.severity.value.upper()}] {f.device}/{f.category}: "
+                    f"{f.title}"
+                )
+
+        if not lines:
+            return ""
+
+        header = "\nRelated active findings across the network:\n"
+        return header + "\n".join(lines) + "\n\n"
+
+    async def _investigate_anomaly_batch(self, batch: AnomalyBatch) -> None:
+        """Investigate a batch of correlated anomalies for a single device."""
+        device = batch.device
+        categories = batch.categories
+        logger.info("Investigating correlated anomalies on %s: %s",
+                     device, categories)
+
+        # Build per-category blocks
+        category_blocks: list[str] = []
+        for entry in batch.entries:
+            anomaly_text = "\n".join(
+                a.to_context_line() for a in entry.anomalies
+            )
+            block = (
+                f"=== {entry.category} ===\n"
+                f"Detected anomalies:\n{anomaly_text}\n\n"
+                f"Raw command output:\n{entry.raw_data}\n"
+            )
+            category_blocks.append(block)
+
+        context = self._gather_investigation_context(device, category=None)
+        categories_str = ", ".join(categories)
+
+        prompt = CORRELATED_ANOMALY_PROMPT_TEMPLATE.format(
+            device=device,
+            categories=categories_str,
+            category_blocks="\n".join(category_blocks),
+            context=context,
+        )
+
+        ctx = ConversationContext()
+        ctx.add_user(prompt)
+
+        try:
+            response_text = await self._llm_tool_loop(ctx)
+            await self._process_batch_analysis(
+                device, categories, response_text,
+            )
+        except Exception as exc:
+            logger.error("Correlated anomaly investigation failed for %s: %s",
+                         device, exc)
+
+    async def _process_batch_analysis(
+        self, device_name: str, categories: list[str], analysis: str,
+    ) -> None:
+        """Parse LLM analysis from a batched investigation and route
+        findings to the correct category trackers."""
+        findings_data = self._extract_json_array(analysis)
+
+        # Group findings by category
+        by_category: dict[str, list[dict]] = {c: [] for c in categories}
+        fallback_category = categories[0] if categories else "unknown"
+
+        for item in findings_data:
+            cat = item.get("category", fallback_category)
+            if cat not in by_category:
+                cat = fallback_category
+            by_category[cat].append(item)
+
+        # Process each category like _process_analysis does
+        for cat, items in by_category.items():
+            current_titles: set[str] = set()
+
+            for item in items:
+                title = item.get("title", "Unknown issue")
+                current_titles.add(title)
+
+                try:
+                    severity = Severity(item.get("severity", "info"))
+                except ValueError:
+                    severity = Severity.INFO
+
+                finding, is_new = await self._findings.add_or_update(
+                    device=device_name,
+                    severity=severity,
+                    category=cat,
+                    title=title,
+                    detail=item.get("detail", ""),
+                    recommendation=item.get("recommendation", ""),
+                )
+
+                if self._notify_callback and is_new:
+                    await self._notify_callback(finding, is_new)
+
+            resolved = await self._findings.resolve_missing(
+                device_name, cat, current_titles,
+            )
+            for finding in resolved:
+                if self._notify_callback:
+                    await self._notify_callback(finding, False)
 
     async def _heartbeat_loop(self, interval: int) -> None:
         """Run heartbeat checks on a schedule."""
@@ -517,7 +712,10 @@ class AgentCore:
                 return json.dumps([f.to_dict() for f in findings], indent=2)
 
             elif name == "run_health_check":
-                await self._run_check(args["category"], args["device"])
+                await self._run_check(
+                    args["category"], args["device"],
+                    _user_triggered=True,
+                )
                 findings = self._findings.get_active(
                     device=args["device"], category=args["category"],
                 )
