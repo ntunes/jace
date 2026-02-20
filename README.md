@@ -43,6 +43,47 @@ python -m jace
 jace -c config.yaml
 ```
 
+## Docker
+
+Build the image:
+
+```bash
+docker build -t jace .
+```
+
+Run in API mode (primary container use case):
+
+```bash
+docker run -d --name jace \
+  -p 8080:8080 \
+  -e ANTHROPIC_API_KEY \
+  -v ./config.yaml:/config/config.yaml:ro \
+  -v ~/.ssh:/home/jace/.ssh:ro \
+  -v jace-data:/data \
+  jace -c /config/config.yaml --api
+```
+
+Run the interactive TUI:
+
+```bash
+docker run -it --rm \
+  -e ANTHROPIC_API_KEY \
+  -v ./config.yaml:/config/config.yaml:ro \
+  -v ~/.ssh:/home/jace/.ssh:ro \
+  -v jace-data:/data \
+  jace -c /config/config.yaml
+```
+
+Key mount points:
+
+| Path | Purpose |
+|---|---|
+| `/config/config.yaml` | Configuration file (bind mount) |
+| `/home/jace/.ssh` | SSH keys for device access |
+| `/data` | Persistent storage (findings DB, metrics, memory) |
+
+Set `storage.path: /data` in your config to persist data across container restarts.
+
 ## Configuration
 
 JACE is configured via a YAML file. Environment variables can be referenced with `${VAR_NAME}` syntax.
