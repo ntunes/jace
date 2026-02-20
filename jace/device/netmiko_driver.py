@@ -20,8 +20,9 @@ class NetmikoDriver(DeviceDriver):
 
     def __init__(self, host: str, username: str, password: str | None = None,
                  ssh_key: str | None = None, port: int = 22,
-                 ssh_config: str | None = None):
-        super().__init__(host, username, password, ssh_key, port, ssh_config=ssh_config)
+                 ssh_config: str | None = None, timeout: int = 30):
+        super().__init__(host, username, password, ssh_key, port,
+                         ssh_config=ssh_config, timeout=timeout)
         self._conn = None
 
     async def connect(self) -> None:
@@ -32,6 +33,8 @@ class NetmikoDriver(DeviceDriver):
             "host": self.host,
             "username": self.username,
             "port": self.port,
+            "timeout": self.timeout,
+            "read_timeout": self.timeout,
         }
         if self.password:
             kwargs["password"] = self.password

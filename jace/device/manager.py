@@ -81,7 +81,7 @@ class DeviceManager:
                     fallback = NetmikoDriver(
                         host=config.host, username=config.username,
                         password=config.password, ssh_key=config.ssh_key,
-                        port=22, ssh_config=ssh_cfg,
+                        port=22, ssh_config=ssh_cfg, timeout=config.timeout,
                     )
                     await fallback.connect()
                     self._fallback_drivers[device_name] = fallback
@@ -205,11 +205,11 @@ class DeviceManager:
             return NetmikoDriver(
                 host=config.host, username=config.username,
                 password=config.password, ssh_key=config.ssh_key,
-                port=22, ssh_config=ssh_cfg,
+                port=22, ssh_config=ssh_cfg, timeout=config.timeout,
             )
         # Default to PyEZ (for AUTO and PYEZ)
         return PyEZDriver(
             host=config.host, username=config.username,
             password=config.password, ssh_key=config.ssh_key,
-            port=config.port, ssh_config=ssh_cfg,
+            port=config.port, ssh_config=ssh_cfg, timeout=config.timeout,
         )

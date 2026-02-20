@@ -12,13 +12,14 @@ class DeviceDriver(ABC):
 
     def __init__(self, host: str, username: str, password: str | None = None,
                  ssh_key: str | None = None, port: int = 830,
-                 ssh_config: str | None = None):
+                 ssh_config: str | None = None, timeout: int = 30):
         self.host = host
         self.username = username
         self.password = password
         self.ssh_key = ssh_key
         self.port = port
         self.ssh_config = ssh_config
+        self.timeout = timeout
         self._connected = False
 
     @abstractmethod

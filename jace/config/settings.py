@@ -51,6 +51,7 @@ class DeviceConfig(BaseModel):
     port: int = 830
     platform: str = "junos"
     ssh_config: str | None = None
+    timeout: int = 30
 
 
 class ScheduleConfig(BaseModel):

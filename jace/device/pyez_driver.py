@@ -86,8 +86,9 @@ class PyEZDriver(DeviceDriver):
 
     def __init__(self, host: str, username: str, password: str | None = None,
                  ssh_key: str | None = None, port: int = 830,
-                 ssh_config: str | None = None):
-        super().__init__(host, username, password, ssh_key, port, ssh_config=ssh_config)
+                 ssh_config: str | None = None, timeout: int = 30):
+        super().__init__(host, username, password, ssh_key, port,
+                         ssh_config=ssh_config, timeout=timeout)
         self._dev = None
 
     async def connect(self) -> None:
@@ -97,6 +98,7 @@ class PyEZDriver(DeviceDriver):
             "host": self.host,
             "user": self.username,
             "port": self.port,
+            "conn_open_timeout": self.timeout,
         }
         if self.password:
             kwargs["passwd"] = self.password
@@ -108,6 +110,7 @@ class PyEZDriver(DeviceDriver):
         loop = asyncio.get_running_loop()
         self._dev = JunosDevice(**kwargs)
         await loop.run_in_executor(_executor, self._dev.open)
+        self._dev.timeout = self.timeout
         self._connected = True
         logger.info("PyEZ connected to %s", self.host)
 
