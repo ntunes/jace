@@ -14,6 +14,7 @@ JACE works in the background — it decides what to check and when, surfaces iss
 - **Textual TUI** — interactive terminal interface with live sidebar showing device status and findings, real-time log footer, and chat-style interaction
 - **Metric watches** — lightweight background metric collection via regex extraction from device commands, with zero LLM cost per sample
 - **SSH config support** — honors `~/.ssh/config` by default (proxy jumps, identity files, custom ports), with per-device override
+- **Local shell troubleshooting** — the agent can run local commands (ping, traceroute, dig, etc.) with per-command user approval and a blocklist for dangerous operations
 - **Dual transport** — PyEZ (NETCONF) as the primary driver with automatic Netmiko (SSH) fallback
 - **Pluggable LLM backend** — supports Anthropic (Claude) and any OpenAI-compatible API (OpenAI, Ollama, vLLM, LiteLLM)
 - **Findings tracking** — deduplicated findings with severity levels, persisted to SQLite, with automatic resolution detection
@@ -247,6 +248,7 @@ The agent has access to these tools during conversations and health check analys
 | `manage_watches` | Add, remove, or list lightweight background metric watches |
 | `save_memory` | Persist observations to long-term store (device/user/incident) |
 | `read_memory` | Recall saved memories or list available entries |
+| `run_shell` | Run a local shell command for network troubleshooting (requires user approval) |
 
 ### Health Check Categories
 
