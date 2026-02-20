@@ -211,4 +211,64 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "required": ["action"],
         },
     ),
+    ToolDefinition(
+        name="save_memory",
+        description=(
+            "Persist an observation or learned fact to long-term memory. "
+            "Use this to save device quirks, operator preferences, or "
+            "incident details that should be remembered across sessions."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["device", "user", "incident"],
+                    "description": (
+                        "'device' for device-specific observations, "
+                        "'user' for operator preferences, "
+                        "'incident' for incident records"
+                    ),
+                },
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Device name or incident slug. "
+                        "Ignored for 'user' category."
+                    ),
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The observation or fact to save (markdown)",
+                },
+            },
+            "required": ["category", "key", "content"],
+        },
+    ),
+    ToolDefinition(
+        name="read_memory",
+        description=(
+            "Recall a previously saved memory entry, or list available "
+            "entries in a category. Use this to check what you already "
+            "know about a device, the operator, or past incidents."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["device", "user", "incident"],
+                    "description": "Memory category to read from",
+                },
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Device name or incident slug. "
+                        "Omit to list available entries."
+                    ),
+                },
+            },
+            "required": ["category"],
+        },
+    ),
 ]

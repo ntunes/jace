@@ -67,6 +67,12 @@ class MetricsConfig(BaseModel):
     anomaly_min_samples: int = 10
 
 
+class MemoryConfig(BaseModel):
+    enabled: bool = True
+    max_file_size: int = 8000      # max chars per memory file
+    max_total_size: int = 24000    # max chars injected into system prompt
+
+
 class HeartbeatConfig(BaseModel):
     enabled: bool = False
     interval: int = 1800  # seconds (default 30 min)
@@ -91,6 +97,7 @@ class Settings(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
 

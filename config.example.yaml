@@ -47,6 +47,11 @@ heartbeat:
   interval: 1800        # seconds (default: 30 min)
   file: heartbeat.md    # path to instructions file
 
+memory:
+  enabled: true
+  max_file_size: 8000    # max chars per memory file
+  max_total_size: 24000  # max chars injected into system prompt
+
 blocked_commands:
   - "request *"
   - "clear *"

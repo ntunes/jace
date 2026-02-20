@@ -10,6 +10,7 @@ from jace.agent.anomaly import AnomalyDetector
 from jace.agent.core import AgentCore
 from jace.agent.findings import FindingsTracker
 from jace.agent.heartbeat import HeartbeatManager
+from jace.agent.memory import MemoryStore
 from jace.agent.metrics_store import MetricsStore
 from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
@@ -50,6 +51,16 @@ class Application:
                     hb_path = Path(config_path).parent / hb_path
             self.heartbeat_manager = HeartbeatManager(hb_path)
 
+        # Memory store (optional)
+        self.memory_store: MemoryStore | None = None
+        if self.settings.memory.enabled:
+            self.memory_store = MemoryStore(
+                base_path=self.settings.storage_path,
+                max_file_size=self.settings.memory.max_file_size,
+                max_total_size=self.settings.memory.max_total_size,
+            )
+            self.memory_store.initialize()
+
         self.agent = AgentCore(
             settings=self.settings,
             llm=self.llm,
@@ -59,6 +70,7 @@ class Application:
             metrics_store=self.metrics_store,
             anomaly_detector=self.anomaly_detector,
             heartbeat_manager=self.heartbeat_manager,
+            memory_store=self.memory_store,
         )
         self._api_server = None
 

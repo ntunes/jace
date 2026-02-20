@@ -11,6 +11,7 @@ from jace.agent.anomaly import AnomalyDetector, AnomalyResult
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.agent.heartbeat import HeartbeatManager
+from jace.agent.memory import MemoryStore
 from jace.agent.metrics_store import MetricPoint, MetricsStore
 from jace.agent.scheduler import Scheduler
 from jace.checks.registry import CheckRegistry
@@ -40,7 +41,13 @@ When responding to user queries:
 - Be concise but thorough
 
 You have access to tools for running commands on Junos devices, retrieving \
-configurations, and checking findings from health monitors.\
+configurations, and checking findings from health monitors.
+
+You also have persistent memory across sessions. Use save_memory to store \
+important observations (device quirks, baselines, operator preferences, \
+incident patterns) and read_memory to recall them. Memory is organized into \
+three categories: 'device' (per-device profiles), 'user' (operator \
+preferences), and 'incident' (past incident records).\
 """
 
 ANALYSIS_PROMPT_TEMPLATE = """\
@@ -103,6 +110,26 @@ Heartbeat instructions:
 {instructions}\
 """
 
+MEMORY_FLUSH_PROMPT = """\
+Review the conversation above and save anything important to persistent memory \
+using the save_memory tool. Focus on:
+- Device quirks, baselines, or patterns learned during troubleshooting
+- Operator preferences (alert thresholds, output formats, workflow habits)
+- Incident details with root causes and resolutions
+
+Only save genuinely useful observations. If nothing is worth saving, do nothing.\
+"""
+
+SUMMARIZE_PROMPT = """\
+Summarize the conversation above in a compact paragraph. Focus on:
+- What devices were discussed and their current state
+- Any issues found, diagnosed, or resolved
+- Pending actions or open questions
+- Key decisions made
+
+Be concise — this summary will replace older messages to free context space.\
+"""
+
 # Notification callback type
 NotifyCallback = Callable[[Finding, bool], Awaitable[None]]  # (finding, is_new)
 
@@ -116,7 +143,8 @@ class AgentCore:
                  findings_tracker: FindingsTracker,
                  metrics_store: MetricsStore | None = None,
                  anomaly_detector: AnomalyDetector | None = None,
-                 heartbeat_manager: HeartbeatManager | None = None) -> None:
+                 heartbeat_manager: HeartbeatManager | None = None,
+                 memory_store: MemoryStore | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
@@ -125,6 +153,7 @@ class AgentCore:
         self._metrics_store = metrics_store
         self._anomaly_detector = anomaly_detector
         self._heartbeat_manager = heartbeat_manager
+        self._memory_store = memory_store
         self._scheduler = Scheduler(settings.schedule)
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
@@ -353,14 +382,73 @@ class AgentCore:
         anomalies = await self._anomaly_detector.check_many(device_name, points)
         return anomalies
 
+    def _build_system_prompt(self) -> str:
+        """Build system prompt with injected memory context."""
+        base = self._settings.llm.system_prompt or SYSTEM_PROMPT
+        if not self._memory_store:
+            return base
+        device_names = self._device_manager.get_connected_devices()
+        memory_ctx = self._memory_store.build_memory_context(device_names)
+        if not memory_ctx:
+            return base
+        return base + "\n\n" + memory_ctx
+
+    async def _compact_context(self, ctx: ConversationContext) -> None:
+        """Flush important memories then summarize and compact the context."""
+        logger.info("Compacting conversation context (%d messages)",
+                     ctx.message_count)
+
+        # 1. Memory flush — run on a disposable copy of the conversation
+        if self._memory_store:
+            try:
+                flush_ctx = ConversationContext(max_messages=ctx.message_count + 10)
+                for msg in ctx.messages:
+                    if msg.role == Role.USER:
+                        flush_ctx.add_user(msg.content)
+                    elif msg.role == Role.ASSISTANT:
+                        flush_ctx.add_assistant(msg)
+                    elif msg.role == Role.TOOL and msg.tool_call_id:
+                        flush_ctx.add_tool_result(msg.tool_call_id, msg.content)
+                flush_ctx.add_user(MEMORY_FLUSH_PROMPT)
+                await self._llm_tool_loop(flush_ctx, max_iterations=5)
+            except Exception as exc:
+                logger.warning("Memory flush failed: %s", exc)
+
+        # 2. Summarize — single LLM call, no tools
+        summary = ""
+        try:
+            summary_messages = list(ctx.messages)
+            summary_messages.append(Message(
+                role=Role.USER, content=SUMMARIZE_PROMPT,
+            ))
+            response = await self._llm.chat(
+                messages=summary_messages,
+                tools=None,
+                system=self._settings.llm.system_prompt or SYSTEM_PROMPT,
+                max_tokens=1024,
+            )
+            summary = response.content or ""
+        except Exception as exc:
+            logger.warning("Context summarization failed: %s", exc)
+            summary = "(Context was compacted but summarization failed.)"
+
+        # 3. Compact
+        ctx.compact(summary, keep_recent=10)
+        logger.info("Context compacted — summary length: %d chars", len(summary))
+
     async def _llm_tool_loop(self, ctx: ConversationContext,
                              max_iterations: int = 10) -> str:
         """Run the LLM tool-use loop until the LLM produces a final text response."""
+        # Check if interactive context needs compaction
+        if ctx is self._interactive_ctx and ctx.needs_compaction:
+            await self._compact_context(ctx)
+
+        system_prompt = self._build_system_prompt()
         for _ in range(max_iterations):
             response = await self._llm.chat(
                 messages=ctx.messages,
                 tools=AGENT_TOOLS,
-                system=self._settings.llm.system_prompt or SYSTEM_PROMPT,
+                system=system_prompt,
                 max_tokens=self._settings.llm.max_tokens,
             )
 
@@ -482,6 +570,20 @@ class AgentCore:
                         args["instruction"],
                     )
                 return f"Unknown heartbeat action: {action}"
+
+            elif name == "save_memory":
+                if not self._memory_store:
+                    return "Memory store not configured."
+                return self._memory_store.save(
+                    args["category"], args.get("key", ""), args["content"],
+                )
+
+            elif name == "read_memory":
+                if not self._memory_store:
+                    return "Memory store not configured."
+                return self._memory_store.read(
+                    args["category"], args.get("key"),
+                )
 
             else:
                 return f"Unknown tool: {name}"
