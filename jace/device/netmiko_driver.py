@@ -50,7 +50,10 @@ class NetmikoDriver(DeviceDriver):
     async def disconnect(self) -> None:
         if self._conn is not None:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(_executor, self._conn.disconnect)
+            try:
+                await loop.run_in_executor(_executor, self._conn.disconnect)
+            except Exception as exc:
+                logger.warning("Netmiko close error for %s: %s", self.host, exc)
             self._connected = False
             self._conn = None
             logger.info("Netmiko disconnected from %s", self.host)

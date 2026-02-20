@@ -114,7 +114,10 @@ class PyEZDriver(DeviceDriver):
     async def disconnect(self) -> None:
         if self._dev is not None:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(_executor, self._dev.close)
+            try:
+                await loop.run_in_executor(_executor, self._dev.close)
+            except Exception as exc:
+                logger.warning("PyEZ close error for %s: %s", self.host, exc)
             self._connected = False
             self._dev = None
             logger.info("PyEZ disconnected from %s", self.host)
