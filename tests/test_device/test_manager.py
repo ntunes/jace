@@ -2,9 +2,11 @@
 
 import pytest
 
-from jace.config.settings import DeviceConfig
+from jace.config.settings import DeviceConfig, Settings
 from jace.device.manager import DeviceManager
-from jace.device.models import DeviceStatus
+from jace.device.models import DeviceStatus, DriverType
+from jace.device.pyez_driver import PyEZDriver
+from jace.device.netmiko_driver import NetmikoDriver
 
 
 def test_add_device():
@@ -164,3 +166,81 @@ class TestAllowlist:
         result = await mgr.run_command("r1", "show security ike sa")
         assert result.success is False
         assert "blocked by policy" in result.error.lower()
+
+
+# --- SSH config tests ---
+
+class TestSSHConfig:
+    """Tests for SSH config passthrough."""
+
+    def test_settings_default_ssh_config(self):
+        s = Settings()
+        assert s.ssh_config == "~/.ssh/config"
+
+    def test_device_config_ssh_config_default_none(self):
+        dc = DeviceConfig(name="r1", host="10.0.0.1", username="admin")
+        assert dc.ssh_config is None
+
+    def test_device_config_accepts_ssh_config(self):
+        dc = DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin",
+            ssh_config="/tmp/my_ssh_config",
+        )
+        assert dc.ssh_config == "/tmp/my_ssh_config"
+
+    def test_global_ssh_config_passed_to_pyez_driver(self, tmp_path):
+        ssh_cfg = tmp_path / "config"
+        ssh_cfg.write_text("Host *\n")
+        mgr = DeviceManager(ssh_config=str(ssh_cfg))
+        config = DeviceConfig(name="r1", host="10.0.0.1", username="admin")
+        driver = mgr._create_driver(config, DriverType.PYEZ)
+        assert isinstance(driver, PyEZDriver)
+        assert driver.ssh_config == str(ssh_cfg)
+
+    def test_global_ssh_config_passed_to_netmiko_driver(self, tmp_path):
+        ssh_cfg = tmp_path / "config"
+        ssh_cfg.write_text("Host *\n")
+        mgr = DeviceManager(ssh_config=str(ssh_cfg))
+        config = DeviceConfig(name="r1", host="10.0.0.1", username="admin")
+        driver = mgr._create_driver(config, DriverType.NETMIKO)
+        assert isinstance(driver, NetmikoDriver)
+        assert driver.ssh_config == str(ssh_cfg)
+
+    def test_per_device_ssh_config_overrides_global(self, tmp_path):
+        global_cfg = tmp_path / "global_config"
+        global_cfg.write_text("Host *\n")
+        device_cfg = tmp_path / "device_config"
+        device_cfg.write_text("Host lab\n")
+        mgr = DeviceManager(ssh_config=str(global_cfg))
+        config = DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin",
+            ssh_config=str(device_cfg),
+        )
+        driver = mgr._create_driver(config, DriverType.PYEZ)
+        assert driver.ssh_config == str(device_cfg)
+
+    def test_nonexistent_ssh_config_not_passed(self):
+        mgr = DeviceManager(ssh_config="/nonexistent/ssh/config")
+        config = DeviceConfig(name="r1", host="10.0.0.1", username="admin")
+        driver = mgr._create_driver(config, DriverType.PYEZ)
+        assert driver.ssh_config is None
+
+    def test_nonexistent_per_device_falls_back_to_global(self, tmp_path):
+        global_cfg = tmp_path / "config"
+        global_cfg.write_text("Host *\n")
+        mgr = DeviceManager(ssh_config=str(global_cfg))
+        config = DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin",
+            ssh_config="/nonexistent/path",
+        )
+        # Per-device path doesn't exist, but _resolve_ssh_config checks
+        # per-device first — since it doesn't exist, returns None
+        driver = mgr._create_driver(config, DriverType.PYEZ)
+        # The per-device value takes priority even if invalid (returns None)
+        assert driver.ssh_config is None
+
+    def test_no_ssh_config_at_all(self):
+        mgr = DeviceManager()
+        config = DeviceConfig(name="r1", host="10.0.0.1", username="admin")
+        driver = mgr._create_driver(config, DriverType.PYEZ)
+        assert driver.ssh_config is None

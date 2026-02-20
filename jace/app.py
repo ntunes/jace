@@ -28,9 +28,11 @@ class Application:
 
     def __init__(self, config_path: str | Path | None = None) -> None:
         self.settings = load_config(config_path)
+        ssh_config_path = Path(self.settings.ssh_config).expanduser()
         self.device_manager = DeviceManager(
             blocked_commands=self.settings.blocked_commands,
             allowed_commands=self.settings.allowed_commands,
+            ssh_config=str(ssh_config_path) if ssh_config_path.is_file() else None,
         )
         self.llm = create_llm_client(self.settings.llm)
         self.check_registry = build_default_registry()

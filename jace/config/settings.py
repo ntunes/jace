@@ -50,6 +50,7 @@ class DeviceConfig(BaseModel):
     driver: str = "auto"
     port: int = 830
     platform: str = "junos"
+    ssh_config: str | None = None
 
 
 class ScheduleConfig(BaseModel):
@@ -106,6 +107,7 @@ class Settings(BaseModel):
     correlation: CorrelationConfig = Field(default_factory=CorrelationConfig)
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
+    ssh_config: str = "~/.ssh/config"
 
     @property
     def storage_path(self) -> Path:

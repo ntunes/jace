@@ -11,6 +11,8 @@ llm:
   # api_key: ${OPENAI_API_KEY}
   # model: gpt-4o
 
+ssh_config: ~/.ssh/config            # global SSH config (default: ~/.ssh/config)
+
 devices:
   - name: mx-core-01
     host: 10.0.0.1
@@ -20,6 +22,7 @@ devices:
     driver: auto                   # auto | pyez | netmiko
     port: 830                      # NETCONF default
     platform: junos
+    # ssh_config: ~/.ssh/config_lab  # per-device override
 
 schedule:
   chassis:    300

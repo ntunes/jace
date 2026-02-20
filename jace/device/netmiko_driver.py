@@ -19,8 +19,9 @@ class NetmikoDriver(DeviceDriver):
     """Junos device driver using Netmiko (SSH)."""
 
     def __init__(self, host: str, username: str, password: str | None = None,
-                 ssh_key: str | None = None, port: int = 22):
-        super().__init__(host, username, password, ssh_key, port)
+                 ssh_key: str | None = None, port: int = 22,
+                 ssh_config: str | None = None):
+        super().__init__(host, username, password, ssh_key, port, ssh_config=ssh_config)
         self._conn = None
 
     async def connect(self) -> None:
@@ -36,6 +37,8 @@ class NetmikoDriver(DeviceDriver):
             kwargs["password"] = self.password
         if self.ssh_key:
             kwargs["key_file"] = self.ssh_key
+        if self.ssh_config:
+            kwargs["ssh_config_file"] = self.ssh_config
 
         loop = asyncio.get_running_loop()
         self._conn = await loop.run_in_executor(

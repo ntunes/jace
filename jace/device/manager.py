@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from fnmatch import fnmatch
+from pathlib import Path
 
 from jace.config.settings import DeviceConfig
 from jace.device.base import DeviceDriver
@@ -22,6 +23,7 @@ class DeviceManager:
         self,
         blocked_commands: list[str] | None = None,
         allowed_commands: list[str] | None = None,
+        ssh_config: str | None = None,
     ) -> None:
         self._devices: dict[str, DeviceConfig] = {}
         self._drivers: dict[str, DeviceDriver] = {}
@@ -29,6 +31,7 @@ class DeviceManager:
         self._info: dict[str, DeviceInfo] = {}
         self._blocked_commands = [p.strip().lower() for p in (blocked_commands or [])]
         self._allowed_commands = [p.strip().lower() for p in (allowed_commands or [])]
+        self._ssh_config = ssh_config
 
     def add_device(self, config: DeviceConfig) -> None:
         self._devices[config.name] = config
@@ -74,10 +77,11 @@ class DeviceManager:
             # Set up fallback if using PyEZ
             if isinstance(primary, PyEZDriver):
                 try:
+                    ssh_cfg = self._resolve_ssh_config(config)
                     fallback = NetmikoDriver(
                         host=config.host, username=config.username,
                         password=config.password, ssh_key=config.ssh_key,
-                        port=22,
+                        port=22, ssh_config=ssh_cfg,
                     )
                     await fallback.connect()
                     self._fallback_drivers[device_name] = fallback
@@ -176,16 +180,30 @@ class DeviceManager:
     def get_connected_devices(self) -> list[str]:
         return [name for name, d in self._drivers.items() if d.is_connected]
 
+    def _resolve_ssh_config(self, config: DeviceConfig) -> str | None:
+        """Resolve SSH config path: per-device override > global default.
+
+        Returns the expanded path if the file exists, otherwise None.
+        """
+        raw = config.ssh_config or self._ssh_config
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        if path.is_file():
+            return str(path)
+        return None
+
     def _create_driver(self, config: DeviceConfig, driver_type: DriverType) -> DeviceDriver:
+        ssh_cfg = self._resolve_ssh_config(config)
         if driver_type == DriverType.NETMIKO:
             return NetmikoDriver(
                 host=config.host, username=config.username,
                 password=config.password, ssh_key=config.ssh_key,
-                port=22,
+                port=22, ssh_config=ssh_cfg,
             )
         # Default to PyEZ (for AUTO and PYEZ)
         return PyEZDriver(
             host=config.host, username=config.username,
             password=config.password, ssh_key=config.ssh_key,
-            port=config.port,
+            port=config.port, ssh_config=ssh_cfg,
         )

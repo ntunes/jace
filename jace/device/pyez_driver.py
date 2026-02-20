@@ -85,8 +85,9 @@ class PyEZDriver(DeviceDriver):
     """Junos device driver using PyEZ (NETCONF)."""
 
     def __init__(self, host: str, username: str, password: str | None = None,
-                 ssh_key: str | None = None, port: int = 830):
-        super().__init__(host, username, password, ssh_key, port)
+                 ssh_key: str | None = None, port: int = 830,
+                 ssh_config: str | None = None):
+        super().__init__(host, username, password, ssh_key, port, ssh_config=ssh_config)
         self._dev = None
 
     async def connect(self) -> None:
@@ -101,6 +102,8 @@ class PyEZDriver(DeviceDriver):
             kwargs["passwd"] = self.password
         if self.ssh_key:
             kwargs["ssh_private_key_file"] = self.ssh_key
+        if self.ssh_config:
+            kwargs["ssh_config"] = self.ssh_config
 
         loop = asyncio.get_running_loop()
         self._dev = JunosDevice(**kwargs)
