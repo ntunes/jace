@@ -48,7 +48,7 @@ class DeviceConfig(BaseModel):
     password: str | None = None
     ssh_key: str | None = None
     driver: str = "auto"
-    port: int = 830
+    port: int = 22
     platform: str = "junos"
     ssh_config: str | None = None
     timeout: int = 30

@@ -85,7 +85,7 @@ class PyEZDriver(DeviceDriver):
     """Junos device driver using PyEZ (NETCONF)."""
 
     def __init__(self, host: str, username: str, password: str | None = None,
-                 ssh_key: str | None = None, port: int = 830,
+                 ssh_key: str | None = None, port: int = 22,
                  ssh_config: str | None = None, timeout: int = 30):
         super().__init__(host, username, password, ssh_key, port,
                          ssh_config=ssh_config, timeout=timeout)

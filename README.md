@@ -110,7 +110,7 @@ devices:
     password: ${DEVICE_PASSWORD}
     ssh_key: ~/.ssh/id_rsa
     driver: auto               # auto | pyez | netmiko
-    port: 830
+    port: 22
     # ssh_config: ~/.ssh/config_lab  # per-device override
 
 schedule:
