@@ -1,4 +1,4 @@
-"""Textual TUI for JACE — chat interface with live sidebar and log footer."""
+"""Textual TUI for JACE — tabbed chat interface with live sidebar."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, RichLog
+from textual.widgets import Footer, Header, RichLog, TabbedContent, TabPane
 
 from jace.agent.core import AgentCore
 from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.device.manager import DeviceManager
 from jace.ui.logging_handler import TextualLogHandler
-from jace.ui.notifications import render_finding_panel, render_findings_summary
-from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsList
+from jace.ui.notifications import finding_toast_params
+from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsTable
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ BANNER = """\
 HELP_TEXT = """\
 Commands:
   /devices    — List managed devices and their status
-  /findings   — Show active findings summary
+  /findings   — Switch to the Findings tab
   /check <device> <category> — Run a health check now
   /clear      — Clear the chat log
   /help       — Show this help message
@@ -56,6 +56,9 @@ class JaceApp(App):
     #main-area {
         width: 1fr;
     }
+    #tabs {
+        height: 1fr;
+    }
     #chat-view {
         height: 1fr;
     }
@@ -64,9 +67,7 @@ class JaceApp(App):
         margin-top: 1;
     }
     #log-panel {
-        height: 5;
-        dock: bottom;
-        border-top: solid $primary-background-lighten-2;
+        height: 1fr;
     }
     """
 
@@ -74,6 +75,8 @@ class JaceApp(App):
         Binding("ctrl+c", "quit", "Quit", show=True),
         Binding("ctrl+l", "clear_chat", "Clear Chat", show=True),
         Binding("f1", "show_help", "Help", show=True),
+        Binding("ctrl+f", "focus_findings", "Findings", show=True),
+        Binding("ctrl+g", "focus_logs", "Logs", show=True),
     ]
 
     def __init__(
@@ -96,11 +99,15 @@ class JaceApp(App):
         with Horizontal():
             with Vertical(id="sidebar"):
                 yield DeviceList(id="device-list")
-                yield FindingsList(id="findings-list")
             with Vertical(id="main-area"):
-                yield ChatView(id="chat-view", highlight=True, markup=True)
+                with TabbedContent(initial="tab-chat", id="tabs"):
+                    with TabPane("Chat", id="tab-chat"):
+                        yield ChatView(id="chat-view", highlight=True, markup=True)
+                    with TabPane("Findings", id="tab-findings"):
+                        yield FindingsTable(id="findings-table")
+                    with TabPane("Logs", id="tab-logs"):
+                        yield RichLog(id="log-panel", highlight=True, markup=True)
                 yield ChatInput()
-        yield RichLog(id="log-panel", highlight=True, markup=True)
         yield Footer()
 
     # ── Lifecycle ───────────────────────────────────────────────────────
@@ -141,6 +148,10 @@ class JaceApp(App):
         if not text:
             return
         event.input.clear()
+
+        # Auto-switch to Chat tab when submitting a query
+        tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
+        tabs.active = "tab-chat"
 
         if text.startswith("/"):
             await self._handle_command(text)
@@ -200,25 +211,9 @@ class JaceApp(App):
                 chat.write(line)
 
         elif cmd == "/findings":
-            findings = self._findings_tracker.get_active()
-            if not findings:
-                chat.write(Text("No active findings.", style="green"))
-                return
-            # Summary counts
-            critical = sum(1 for f in findings if f.severity == Severity.CRITICAL)
-            warning = sum(1 for f in findings if f.severity == Severity.WARNING)
-            info = sum(1 for f in findings if f.severity == Severity.INFO)
-            summary = Text()
-            summary.append("Active Findings: ", style="bold")
-            if critical:
-                summary.append(f"{critical} critical ", style="bold red")
-            if warning:
-                summary.append(f"{warning} warning ", style="bold yellow")
-            if info:
-                summary.append(f"{info} info ", style="bold blue")
-            chat.write(Panel(summary, border_style="dim"))
-            for f in findings:
-                chat.write(render_finding_panel(f, is_new=False))
+            # Switch to the Findings tab
+            tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
+            tabs.active = "tab-findings"
 
         elif cmd == "/check":
             if len(parts) < 3:
@@ -242,13 +237,13 @@ class JaceApp(App):
     async def _on_finding(self, finding: Finding, is_new: bool) -> None:
         """Called from the agent when a finding is created/updated/resolved."""
         def _show() -> None:
-            chat: ChatView = self.query_one("#chat-view")
-            chat.show_finding_alert(finding, is_new)
+            params = finding_toast_params(finding, is_new)
+            self.notify(**params)
             self._refresh_sidebar()
 
         self.call_later(_show)
 
-    # ── Sidebar refresh ─────────────────────────────────────────────────
+    # ── Sidebar & findings refresh ───────────────────────────────────────
 
     def _refresh_sidebar(self) -> None:
         devices = self._device_manager.list_devices()
@@ -257,8 +252,25 @@ class JaceApp(App):
         device_list: DeviceList = self.query_one("#device-list")
         device_list.update_devices(devices)
 
-        findings_list: FindingsList = self.query_one("#findings-list")
-        findings_list.update_findings(findings)
+        # Update findings table
+        table: FindingsTable = self.query_one("#findings-table")
+        table.refresh_findings(findings)
+
+        self._update_tab_badges(findings)
+
+    def _update_tab_badges(self, findings: list[Finding]) -> None:
+        """Update the Findings tab label with the active finding count."""
+        tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
+        tab = tabs.get_tab("tab-findings")
+        count = len(findings)
+        if count == 0:
+            tab.label = "Findings"
+        else:
+            has_critical = any(f.severity == Severity.CRITICAL for f in findings)
+            if has_critical:
+                tab.label = Text.assemble("Findings ", (f"({count})", "bold red"))
+            else:
+                tab.label = f"Findings ({count})"
 
     # ── Keybinding actions ──────────────────────────────────────────────
 
@@ -269,3 +281,11 @@ class JaceApp(App):
     def action_show_help(self) -> None:
         chat: ChatView = self.query_one("#chat-view")
         chat.write(Panel(HELP_TEXT, title="Help", border_style="cyan"))
+
+    def action_focus_findings(self) -> None:
+        tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
+        tabs.active = "tab-findings"
+
+    def action_focus_logs(self) -> None:
+        tabs: TabbedContent = self.query_one("#tabs", TabbedContent)
+        tabs.active = "tab-logs"

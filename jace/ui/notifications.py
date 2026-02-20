@@ -100,6 +100,36 @@ def render_findings_summary(console: Console, findings: list[Finding]) -> None:
     console.print(Panel(summary, border_style="dim"))
 
 
+def finding_toast_params(finding: Finding, is_new: bool) -> dict:
+    """Return kwargs suitable for ``App.notify(**params)``.
+
+    Maps finding severity to Textual toast severity/timeout so the caller
+    can simply do ``self.notify(**finding_toast_params(f, True))``.
+    """
+    sev = finding.severity
+    if sev == Severity.CRITICAL:
+        toast_severity = "error"
+        timeout = 10
+    elif sev == Severity.WARNING:
+        toast_severity = "warning"
+        timeout = 8
+    else:
+        toast_severity = "information"
+        timeout = 5
+
+    status = "NEW" if is_new else ("RESOLVED" if finding.resolved else "UPDATED")
+    label = sev.value.upper()
+    title = f"{label} on {finding.device}"
+    message = f"[bold]{finding.title}[/bold] ({status})"
+
+    return {
+        "message": message,
+        "title": title,
+        "severity": toast_severity,
+        "timeout": timeout,
+    }
+
+
 def format_status_bar(devices_connected: int, findings_count: int,
                       critical_count: int) -> str:
     """Format the status bar text."""

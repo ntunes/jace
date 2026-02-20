@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING
 
 from rich.markdown import Markdown
 from rich.text import Text
-from textual.widgets import Input, RichLog, Static
+from textual.widgets import DataTable, Input, RichLog, Static
 
 if TYPE_CHECKING:
     from jace.agent.findings import Finding, Severity
     from jace.device.models import DeviceInfo
+
+_SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 
 # Status dot colours keyed by DeviceStatus value
 _DEVICE_DOTS: dict[str, tuple[str, str]] = {
@@ -62,6 +64,28 @@ class FindingsList(Static):
             text.append(f"  {icon} ", style=style)
             text.append(f"{f.title}\n")
         self.update(text)
+
+
+class FindingsTable(DataTable):
+    """Full-width DataTable showing all active findings."""
+
+    _SEV_LABELS = {"critical": "CRIT", "warning": "WARN", "info": "INFO"}
+
+    def on_mount(self) -> None:
+        self.add_columns("Severity", "Device", "Category", "Title", "First Seen", "Status")
+
+    def refresh_findings(self, findings: list[Finding]) -> None:
+        """Clear and re-populate the table from the given findings list."""
+        self.clear()
+        sorted_findings = sorted(
+            findings,
+            key=lambda f: (_SEVERITY_ORDER.get(f.severity.value, 9), f.last_seen),
+        )
+        for f in sorted_findings:
+            sev = self._SEV_LABELS.get(f.severity.value, f.severity.value.upper())
+            status = "RESOLVED" if f.resolved else "ACTIVE"
+            first = f.first_seen[:19] if len(f.first_seen) > 19 else f.first_seen
+            self.add_row(sev, f.device, f.category, f.title, first, status)
 
 
 class ChatView(RichLog):

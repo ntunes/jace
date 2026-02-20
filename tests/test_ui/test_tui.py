@@ -12,7 +12,9 @@ from jace.config.settings import LLMConfig, ScheduleConfig, Settings
 from jace.device.manager import DeviceManager
 from jace.device.models import DeviceInfo, DeviceStatus
 from jace.ui.tui import JaceApp
-from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsList
+from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsTable
+
+from textual.widgets import TabbedContent, TabPane
 
 
 def _make_app(
@@ -44,13 +46,17 @@ def _make_app(
     )
 
 
-def _sample_finding() -> Finding:
+def _sample_finding(
+    severity: Severity = Severity.WARNING,
+    device: str = "mx-01",
+    title: str = "Fan tray 1 failure",
+) -> Finding:
     return Finding(
         id="abc123",
-        device="mx-01",
-        severity=Severity.WARNING,
+        device=device,
+        severity=severity,
         category="chassis",
-        title="Fan tray 1 failure",
+        title=title,
         detail="Fan tray 1 is reporting a failure.",
         recommendation="Replace fan tray 1.",
         first_seen="2025-01-01T00:00:00",
@@ -60,12 +66,16 @@ def _sample_finding() -> Finding:
 
 @pytest.mark.asyncio
 async def test_widget_tree_composition():
-    """Verify the widget tree has all expected components."""
+    """Verify the widget tree has TabbedContent with all three tab panes."""
     app = _make_app()
     async with app.run_test() as pilot:
         assert app.query_one("#device-list", DeviceList)
-        assert app.query_one("#findings-list", FindingsList)
+        assert app.query_one("#tabs", TabbedContent)
+        assert app.query_one("#tab-chat", TabPane)
+        assert app.query_one("#tab-findings", TabPane)
+        assert app.query_one("#tab-logs", TabPane)
         assert app.query_one("#chat-view", ChatView)
+        assert app.query_one("#findings-table", FindingsTable)
         assert app.query_one("#chat-input", ChatInput)
         assert app.query_one("#log-panel")
 
@@ -110,8 +120,8 @@ async def test_sidebar_updates_devices():
 
 
 @pytest.mark.asyncio
-async def test_sidebar_updates_findings():
-    """Sidebar FindingsList should show active findings."""
+async def test_findings_table_in_tab():
+    """FindingsTable in the Findings tab should show active findings."""
     ft = MagicMock(spec=FindingsTracker)
     ft.get_active = MagicMock(return_value=[_sample_finding()])
     ft.active_count = 1
@@ -120,24 +130,99 @@ async def test_sidebar_updates_findings():
     app = _make_app(findings_tracker=ft)
     async with app.run_test() as pilot:
         await pilot.pause()
-        findings_list = app.query_one("#findings-list", FindingsList)
-        rendered = str(findings_list._Static__content)
-        assert "Fan tray" in rendered
+        table = app.query_one("#findings-table", FindingsTable)
+        assert table.row_count == 1
 
 
 @pytest.mark.asyncio
-async def test_finding_notification_appears_in_chat():
-    """When _on_finding is called, the finding should appear in the chat."""
+async def test_finding_notification_is_toast():
+    """When _on_finding is called, a toast should fire (not a chat write)."""
     app = _make_app()
     finding = _sample_finding()
 
     async with app.run_test() as pilot:
         chat: ChatView = app.query_one("#chat-view")
         lines_before = len(chat.lines)
-        await app._on_finding(finding, is_new=True)
+
+        with patch.object(app, "notify") as mock_notify:
+            await app._on_finding(finding, is_new=True)
+            await pilot.pause()
+            mock_notify.assert_called_once()
+            call_kwargs = mock_notify.call_args
+            assert "error" == call_kwargs.kwargs.get("severity") or \
+                   "warning" == call_kwargs.kwargs.get("severity") or \
+                   "information" == call_kwargs.kwargs.get("severity")
+
+        # Chat should NOT have new lines from the finding
+        assert len(chat.lines) == lines_before
+
+
+@pytest.mark.asyncio
+async def test_findings_table_refresh():
+    """refresh_findings() should populate the DataTable with correct rows."""
+    app = _make_app()
+    async with app.run_test() as pilot:
+        table = app.query_one("#findings-table", FindingsTable)
+        findings = [
+            _sample_finding(Severity.CRITICAL, "mx-01", "BGP peer down"),
+            _sample_finding(Severity.WARNING, "mx-02", "Fan tray 1 failure"),
+            _sample_finding(Severity.INFO, "mx-03", "NTP drift detected"),
+        ]
+        table.refresh_findings(findings)
+        assert table.row_count == 3
+
+
+@pytest.mark.asyncio
+async def test_findings_command_switches_tab():
+    """/findings should switch active tab to tab-findings."""
+    app = _make_app()
+    async with app.run_test() as pilot:
+        tabs = app.query_one("#tabs", TabbedContent)
+        assert tabs.active == "tab-chat"
+
+        input_widget = app.query_one("#chat-input", ChatInput)
+        input_widget.focus()
+        await pilot.press(*"/findings")
+        await pilot.press("enter")
         await pilot.pause()
-        # The finding panel was written to the ChatView
-        assert len(chat.lines) > lines_before
+
+        assert tabs.active == "tab-findings"
+
+
+@pytest.mark.asyncio
+async def test_tab_badge_updates():
+    """After _refresh_sidebar with findings, the Findings tab label should include count."""
+    ft = MagicMock(spec=FindingsTracker)
+    findings = [_sample_finding()]
+    ft.get_active = MagicMock(return_value=findings)
+    ft.active_count = 1
+    ft.critical_count = 0
+
+    app = _make_app(findings_tracker=ft)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tabs = app.query_one("#tabs", TabbedContent)
+        tab = tabs.get_tab("tab-findings")
+        label_text = str(tab.label)
+        assert "(1)" in label_text
+
+
+@pytest.mark.asyncio
+async def test_tab_badge_critical():
+    """Tab badge should be styled for critical findings."""
+    ft = MagicMock(spec=FindingsTracker)
+    findings = [_sample_finding(Severity.CRITICAL, "mx-01", "BGP peer down")]
+    ft.get_active = MagicMock(return_value=findings)
+    ft.active_count = 1
+    ft.critical_count = 1
+
+    app = _make_app(findings_tracker=ft)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tabs = app.query_one("#tabs", TabbedContent)
+        tab = tabs.get_tab("tab-findings")
+        label_text = str(tab.label)
+        assert "(1)" in label_text
 
 
 @pytest.mark.asyncio
