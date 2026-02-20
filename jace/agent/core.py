@@ -724,12 +724,17 @@ class AgentCore:
 
             elif name == "list_devices":
                 devices = self._device_manager.list_devices()
-                return json.dumps(
-                    [{"name": d.name, "host": d.host, "status": d.status.value,
-                      "model": d.model, "version": d.version}
-                     for d in devices],
-                    indent=2,
-                )
+                result = []
+                for d in devices:
+                    entry: dict = {
+                        "name": d.name, "host": d.host,
+                        "status": d.status.value,
+                        "model": d.model, "version": d.version,
+                    }
+                    if d.error:
+                        entry["error"] = d.error
+                    result.append(entry)
+                return json.dumps(result, indent=2)
 
             elif name == "get_findings":
                 findings = self._findings.get_active(

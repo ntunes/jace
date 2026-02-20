@@ -59,6 +59,7 @@ class DeviceManager:
             await primary.connect()
             self._drivers[device_name] = primary
             info.status = DeviceStatus.CONNECTED
+            info.error = ""
             info.driver_type = primary.driver_name
 
             # Fetch facts
@@ -93,6 +94,7 @@ class DeviceManager:
         except Exception as exc:
             logger.error("Failed to connect to %s: %s", device_name, exc)
             info.status = DeviceStatus.ERROR
+            info.error = str(exc)
             return False
 
     async def disconnect_all(self) -> None:

@@ -44,3 +44,4 @@ class DeviceInfo:
     status: DeviceStatus = DeviceStatus.DISCONNECTED
     driver_type: str = ""
     last_check: datetime | None = None
+    error: str = ""
