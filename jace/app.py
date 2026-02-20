@@ -107,20 +107,11 @@ class Application:
         for dev_config in self.settings.devices:
             self.device_manager.add_device(dev_config)
 
-        logger.info("Connecting to %d device(s)...", len(self.settings.devices))
-        await self.device_manager.connect_all()
-
-        connected = self.device_manager.get_connected_devices()
-        logger.info("Connected to %d device(s): %s", len(connected), connected)
-
-        # Start background monitoring
-        self.agent.start_monitoring()
-
         # Start API server if requested
         if api or self.settings.api.enabled:
             await self._start_api()
 
-        # Run Textual TUI
+        # Run Textual TUI — device connections happen in the background
         tui = JACE(
             agent=self.agent,
             device_manager=self.device_manager,

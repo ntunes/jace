@@ -149,10 +149,23 @@ class JACE(App):
         self._refresh_sidebar()
         self.query_one("#chat-input").focus()
 
+        # Connect devices and start monitoring in the background
+        self._connect_and_start()
+
     def on_unmount(self) -> None:
         if self._log_handler:
             logging.getLogger().removeHandler(self._log_handler)
             self._log_handler = None
+
+    @work(exclusive=False)
+    async def _connect_and_start(self) -> None:
+        """Connect to devices and start monitoring in the background."""
+        logger.info("Connecting to devices...")
+        await self._device_manager.connect_all()
+        connected = self._device_manager.get_connected_devices()
+        logger.info("Connected to %d device(s): %s", len(connected), connected)
+        self._refresh_sidebar()
+        self._agent.start_monitoring()
 
     # ── Input handling ──────────────────────────────────────────────────
 
