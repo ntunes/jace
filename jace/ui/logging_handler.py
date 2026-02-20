@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -25,8 +26,8 @@ _LEVEL_STYLES: dict[int, tuple[str, str]] = {
 class TextualLogHandler(logging.Handler):
     """Logging handler that writes formatted records to a Textual RichLog widget.
 
-    Uses ``app.call_from_thread()`` so it is safe to emit from PyEZ / Netmiko
-    executor threads.
+    Safe to call from both the Textual event-loop thread (async agent code)
+    and executor threads (PyEZ / Netmiko).
     """
 
     def __init__(self, app: App, widget_id: str = "log-panel") -> None:
@@ -37,7 +38,12 @@ class TextualLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             text = self._format_record(record)
-            self._app.call_from_thread(self._write, text)
+            if self._app._thread_id == threading.get_ident():
+                # Already on the event-loop thread — schedule directly
+                self._app.call_later(self._write, text)
+            else:
+                # From an executor thread — marshal onto the event loop
+                self._app.call_from_thread(self._write, text)
         except Exception:
             self.handleError(record)
 
