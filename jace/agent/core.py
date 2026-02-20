@@ -14,6 +14,7 @@ from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.agent.heartbeat import HeartbeatManager
 from jace.agent.memory import MemoryStore
 from jace.agent.metrics_store import MetricPoint, MetricsStore
+from jace.agent.watch import Watch, WatchManager
 from jace.agent.scheduler import Scheduler
 from jace.checks.registry import CheckRegistry
 from jace.config.settings import Settings
@@ -216,7 +217,8 @@ class AgentCore:
                  anomaly_detector: AnomalyDetector | None = None,
                  heartbeat_manager: HeartbeatManager | None = None,
                  memory_store: MemoryStore | None = None,
-                 anomaly_accumulator: AnomalyAccumulator | None = None) -> None:
+                 anomaly_accumulator: AnomalyAccumulator | None = None,
+                 watch_manager: WatchManager | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
@@ -226,6 +228,7 @@ class AgentCore:
         self._anomaly_detector = anomaly_detector
         self._heartbeat_manager = heartbeat_manager
         self._memory_store = memory_store
+        self._watch_manager = watch_manager
         self._accumulator = anomaly_accumulator
         if self._accumulator is not None:
             self._accumulator.set_callback(self._investigate_anomaly_batch)
@@ -256,6 +259,8 @@ class AgentCore:
                          self._settings.heartbeat.interval)
 
     async def stop_monitoring(self) -> None:
+        if self._watch_manager is not None:
+            self._watch_manager.stop_all()
         if self._accumulator is not None:
             await self._accumulator.stop()
         if self._heartbeat_task is not None:
@@ -791,6 +796,50 @@ class AgentCore:
                         args["instruction"],
                     )
                 return f"Unknown heartbeat action: {action}"
+
+            elif name == "manage_watches":
+                if not self._watch_manager:
+                    return "Watch manager not configured."
+                action = args["action"]
+                if action == "list":
+                    watches = self._watch_manager.list_watches()
+                    if not watches:
+                        return "No active watches."
+                    return json.dumps([
+                        {"id": w.id, "device": w.device,
+                         "command": w.command, "metric_name": w.metric_name,
+                         "interval": w.interval, "parse_pattern": w.parse_pattern,
+                         "unit": w.unit}
+                        for w in watches
+                    ], indent=2)
+                elif action == "add":
+                    for field in ("device", "command", "metric_name",
+                                  "parse_pattern"):
+                        if field not in args:
+                            return f"Missing required parameter: {field}"
+                    watch = Watch(
+                        id="",
+                        device=args["device"],
+                        command=args["command"],
+                        metric_name=args["metric_name"],
+                        parse_pattern=args["parse_pattern"],
+                        interval=args.get("interval", 60),
+                        unit=args.get("unit", ""),
+                    )
+                    try:
+                        watch_id = self._watch_manager.add(watch)
+                    except ValueError as exc:
+                        return f"Error: {exc}"
+                    return f"Watch created: {watch_id}"
+                elif action == "remove":
+                    watch_id = args.get("watch_id", "")
+                    if not watch_id:
+                        return "Missing required parameter: watch_id"
+                    removed = self._watch_manager.remove(watch_id)
+                    if removed:
+                        return f"Watch {watch_id} removed."
+                    return f"Watch {watch_id} not found."
+                return f"Unknown watch action: {action}"
 
             elif name == "save_memory":
                 if not self._memory_store:

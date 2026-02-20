@@ -212,6 +212,67 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="manage_watches",
+        description=(
+            "Manage lightweight metric watches — periodic background collection "
+            "of a specific metric from a device command, with zero LLM cost per "
+            "cycle. Data feeds into the metrics store and is queryable via "
+            "get_metrics. Use 'add' to create a watch, 'remove' to delete one, "
+            "'list' to see active watches."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "add", "remove"],
+                    "description": "The action to perform",
+                },
+                "device": {
+                    "type": "string",
+                    "description": "Target device name (required for add)",
+                },
+                "command": {
+                    "type": "string",
+                    "description": (
+                        "Junos show command to run periodically (required for add)"
+                    ),
+                },
+                "metric_name": {
+                    "type": "string",
+                    "description": (
+                        "Name for the metric in the metrics store (required for add)"
+                    ),
+                },
+                "parse_pattern": {
+                    "type": "string",
+                    "description": (
+                        "Regex with a named group 'value' to extract a numeric "
+                        "value from command output, e.g. "
+                        "'CRC Errors\\s+(?P<value>\\d+)' (required for add)"
+                    ),
+                },
+                "interval": {
+                    "type": "integer",
+                    "description": (
+                        "Seconds between collections (minimum 30, default 60)"
+                    ),
+                },
+                "unit": {
+                    "type": "string",
+                    "description": (
+                        "Unit label for the metric (e.g. 'errors', '%')"
+                    ),
+                },
+                "watch_id": {
+                    "type": "string",
+                    "description": "Watch ID to remove (required for remove)",
+                },
+            },
+            "required": ["action"],
+        },
+    ),
+    ToolDefinition(
         name="save_memory",
         description=(
             "Persist an observation or learned fact to long-term memory. "

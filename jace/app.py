@@ -13,6 +13,7 @@ from jace.agent.findings import FindingsTracker
 from jace.agent.heartbeat import HeartbeatManager
 from jace.agent.memory import MemoryStore
 from jace.agent.metrics_store import MetricsStore
+from jace.agent.watch import WatchManager
 from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
 from jace.device.manager import DeviceManager
@@ -69,6 +70,12 @@ class Application:
                 window_seconds=self.settings.correlation.window_seconds,
             )
 
+        # Watch manager — lightweight metric collection
+        self.watch_manager = WatchManager(
+            device_manager=self.device_manager,
+            metrics_store=self.metrics_store,
+        )
+
         self.agent = AgentCore(
             settings=self.settings,
             llm=self.llm,
@@ -80,6 +87,7 @@ class Application:
             heartbeat_manager=self.heartbeat_manager,
             memory_store=self.memory_store,
             anomaly_accumulator=self.anomaly_accumulator,
+            watch_manager=self.watch_manager,
         )
         self._api_server = None
 
@@ -124,6 +132,7 @@ class Application:
     async def shutdown(self) -> None:
         """Graceful shutdown."""
         logger.info("Shutting down...")
+        self.watch_manager.stop_all()
         await self.agent.stop_monitoring()
         await self.device_manager.disconnect_all()
         await self.findings_tracker.close()
