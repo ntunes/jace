@@ -179,4 +179,36 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "required": ["device"],
         },
     ),
+    ToolDefinition(
+        name="manage_heartbeat",
+        description=(
+            "Manage the heartbeat checklist — periodic monitoring instructions "
+            "that JACE executes autonomously. Use 'list' to view, 'add' to "
+            "append, 'remove' to delete by number, 'replace' to overwrite all."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "add", "remove", "replace"],
+                    "description": "The action to perform",
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": (
+                        "The instruction text (for add) or full new "
+                        "content (for replace)"
+                    ),
+                },
+                "index": {
+                    "type": "integer",
+                    "description": (
+                        "1-based line number to remove (for remove action)"
+                    ),
+                },
+            },
+            "required": ["action"],
+        },
+    ),
 ]

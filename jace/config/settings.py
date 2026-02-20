@@ -67,6 +67,12 @@ class MetricsConfig(BaseModel):
     anomaly_min_samples: int = 10
 
 
+class HeartbeatConfig(BaseModel):
+    enabled: bool = False
+    interval: int = 1800  # seconds (default 30 min)
+    file: str = "heartbeat.md"
+
+
 class APIConfig(BaseModel):
     enabled: bool = False
     host: str = "127.0.0.1"
@@ -84,6 +90,7 @@ class Settings(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
 

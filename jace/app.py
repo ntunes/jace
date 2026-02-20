@@ -9,6 +9,7 @@ from pathlib import Path
 from jace.agent.anomaly import AnomalyDetector
 from jace.agent.core import AgentCore
 from jace.agent.findings import FindingsTracker
+from jace.agent.heartbeat import HeartbeatManager
 from jace.agent.metrics_store import MetricsStore
 from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
@@ -38,6 +39,17 @@ class Application:
             window_hours=self.settings.metrics.anomaly_window_hours,
             min_samples=self.settings.metrics.anomaly_min_samples,
         )
+
+        # Heartbeat manager (optional)
+        self.heartbeat_manager: HeartbeatManager | None = None
+        if self.settings.heartbeat.enabled:
+            hb_path = Path(self.settings.heartbeat.file)
+            if not hb_path.is_absolute():
+                # Resolve relative to config directory or cwd
+                if config_path is not None:
+                    hb_path = Path(config_path).parent / hb_path
+            self.heartbeat_manager = HeartbeatManager(hb_path)
+
         self.agent = AgentCore(
             settings=self.settings,
             llm=self.llm,
@@ -46,6 +58,7 @@ class Application:
             findings_tracker=self.findings_tracker,
             metrics_store=self.metrics_store,
             anomaly_detector=self.anomaly_detector,
+            heartbeat_manager=self.heartbeat_manager,
         )
         self._api_server = None
 

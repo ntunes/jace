@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Callable, Awaitable
@@ -9,6 +10,7 @@ from typing import Any, Callable, Awaitable
 from jace.agent.anomaly import AnomalyDetector, AnomalyResult
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
+from jace.agent.heartbeat import HeartbeatManager
 from jace.agent.metrics_store import MetricPoint, MetricsStore
 from jace.agent.scheduler import Scheduler
 from jace.checks.registry import CheckRegistry
@@ -84,6 +86,18 @@ After investigating, respond with a JSON array of findings:
 - recommendation: suggested action to resolve\
 """
 
+HEARTBEAT_PROMPT_TEMPLATE = """\
+You are running a scheduled heartbeat check. Execute each instruction below \
+using your available tools. Check all connected devices as appropriate.
+
+If everything is normal, respond with an empty JSON array: []
+If you find issues, respond with a JSON array of findings (same format as \
+health checks: severity, title, detail, recommendation).
+
+Heartbeat instructions:
+{instructions}\
+"""
+
 # Notification callback type
 NotifyCallback = Callable[[Finding, bool], Awaitable[None]]  # (finding, is_new)
 
@@ -96,7 +110,8 @@ class AgentCore:
                  check_registry: CheckRegistry,
                  findings_tracker: FindingsTracker,
                  metrics_store: MetricsStore | None = None,
-                 anomaly_detector: AnomalyDetector | None = None) -> None:
+                 anomaly_detector: AnomalyDetector | None = None,
+                 heartbeat_manager: HeartbeatManager | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
@@ -104,9 +119,11 @@ class AgentCore:
         self._findings = findings_tracker
         self._metrics_store = metrics_store
         self._anomaly_detector = anomaly_detector
+        self._heartbeat_manager = heartbeat_manager
         self._scheduler = Scheduler(settings.schedule)
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
+        self._heartbeat_task: asyncio.Task | None = None
 
     def set_notify_callback(self, callback: NotifyCallback) -> None:
         self._notify_callback = callback
@@ -120,7 +137,24 @@ class AgentCore:
         self._scheduler.start(devices, self._run_check)
         logger.info("Monitoring started for devices: %s", devices)
 
+        if (self._settings.heartbeat.enabled
+                and self._heartbeat_manager is not None):
+            self._heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(self._settings.heartbeat.interval),
+                name="heartbeat",
+            )
+            logger.info("Heartbeat loop started (interval=%ds)",
+                         self._settings.heartbeat.interval)
+
     async def stop_monitoring(self) -> None:
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
+            logger.info("Heartbeat loop stopped")
         await self._scheduler.stop()
 
     async def handle_user_input(self, user_input: str) -> str:
@@ -185,6 +219,46 @@ class AgentCore:
         except Exception as exc:
             logger.error("LLM analysis failed for %s/%s: %s",
                          category, device_name, exc)
+
+    async def _heartbeat_loop(self, interval: int) -> None:
+        """Run heartbeat checks on a schedule."""
+        # Stagger initial start
+        stagger = hash("heartbeat") % min(30, interval)
+        await asyncio.sleep(stagger)
+
+        while True:
+            try:
+                await self._run_heartbeat()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("Heartbeat cycle failed: %s", exc)
+            await asyncio.sleep(interval)
+
+    async def _run_heartbeat(self) -> None:
+        """Execute one heartbeat cycle."""
+        if self._heartbeat_manager is None:
+            return
+
+        instructions = self._heartbeat_manager.get_instructions()
+        if not instructions.strip():
+            logger.debug("Heartbeat: no instructions configured, skipping")
+            return
+
+        logger.info("Running heartbeat cycle")
+        prompt = HEARTBEAT_PROMPT_TEMPLATE.format(instructions=instructions)
+
+        ctx = ConversationContext()
+        ctx.add_user(prompt)
+
+        try:
+            response_text = await self._llm_tool_loop(ctx)
+            await self._process_analysis(
+                device_name="*", category="heartbeat",
+                analysis=response_text,
+            )
+        except Exception as exc:
+            logger.error("Heartbeat LLM analysis failed: %s", exc)
 
     async def _process_analysis(self, device_name: str, category: str,
                                 analysis: str) -> None:
@@ -383,6 +457,26 @@ class AgentCore:
                     f"show configuration | compare rollback {rollback}",
                 )
                 return result.output if result.success else f"Error: {result.error}"
+
+            elif name == "manage_heartbeat":
+                if not self._heartbeat_manager:
+                    return "Heartbeat not configured."
+                action = args["action"]
+                if action == "list":
+                    return self._heartbeat_manager.list_instructions()
+                elif action == "add":
+                    return self._heartbeat_manager.add_instruction(
+                        args["instruction"],
+                    )
+                elif action == "remove":
+                    return self._heartbeat_manager.remove_instruction(
+                        args["index"],
+                    )
+                elif action == "replace":
+                    return self._heartbeat_manager.replace_instructions(
+                        args["instruction"],
+                    )
+                return f"Unknown heartbeat action: {action}"
 
             else:
                 return f"Unknown tool: {name}"

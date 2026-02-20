@@ -42,6 +42,11 @@ metrics:
   anomaly_window_hours: 24
   anomaly_min_samples: 10
 
+heartbeat:
+  enabled: false
+  interval: 1800        # seconds (default: 30 min)
+  file: heartbeat.md    # path to instructions file
+
 blocked_commands:
   - "request *"
   - "clear *"
