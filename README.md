@@ -12,6 +12,8 @@ JACE works in the background — it decides what to check and when, surfaces iss
 - **Persistent memory** — the agent remembers device baselines, operator preferences, and incident history across sessions, and consults memory during investigations
 - **Heartbeat monitoring** — user-programmable periodic checks defined in natural language (e.g. "verify BGP peers are up on all devices")
 - **Textual TUI** — interactive terminal interface with live sidebar showing device status and findings, real-time log footer, and chat-style interaction
+- **Metric watches** — lightweight background metric collection via regex extraction from device commands, with zero LLM cost per sample
+- **SSH config support** — honors `~/.ssh/config` by default (proxy jumps, identity files, custom ports), with per-device override
 - **Dual transport** — PyEZ (NETCONF) as the primary driver with automatic Netmiko (SSH) fallback
 - **Pluggable LLM backend** — supports Anthropic (Claude) and any OpenAI-compatible API (OpenAI, Ollama, vLLM, LiteLLM)
 - **Findings tracking** — deduplicated findings with severity levels, persisted to SQLite, with automatic resolution detection
@@ -57,6 +59,8 @@ llm:
   # api_key: ${OPENAI_API_KEY}
   # model: gpt-4o
 
+ssh_config: ~/.ssh/config          # global SSH config (default: ~/.ssh/config)
+
 devices:
   - name: mx-core-01
     host: 10.0.0.1
@@ -65,6 +69,7 @@ devices:
     ssh_key: ~/.ssh/id_rsa
     driver: auto               # auto | pyez | netmiko
     port: 830
+    # ssh_config: ~/.ssh/config_lab  # per-device override
 
 schedule:
   chassis:    300              # seconds between checks
@@ -116,9 +121,11 @@ Once started, JACE opens a Textual-based terminal interface with:
 - **Log footer** — real-time application logs
 
 ```
-jace> what alarms are active on mx-core-01?
-jace> show me the BGP peer status
-jace> is there anything wrong with the interfaces?
+user> what alarms are active on mx-core-01?
+jace> No alarms currently active on mx-core-01.
+
+user> show me the BGP peer status
+user> is there anything wrong with the interfaces?
 ```
 
 Commands:
@@ -237,6 +244,7 @@ The agent has access to these tools during conversations and health check analys
 | `get_metrics` | Query time-series metrics and historical trends |
 | `compare_config` | Diff current config against a rollback |
 | `manage_heartbeat` | List, add, remove, or replace heartbeat instructions |
+| `manage_watches` | Add, remove, or list lightweight background metric watches |
 | `save_memory` | Persist observations to long-term store (device/user/incident) |
 | `read_memory` | Recall saved memories or list available entries |
 
