@@ -87,8 +87,13 @@ After investigating, respond with a JSON array of findings:
 """
 
 HEARTBEAT_PROMPT_TEMPLATE = """\
-You are running a scheduled heartbeat check. Execute each instruction below \
+You are running a scheduled heartbeat check. Evaluate each instruction below \
 using your available tools. Check all connected devices as appropriate.
+
+IMPORTANT: Prefer already-collected data first. Use get_findings and get_metrics \
+to check existing health check results and historical metrics before running \
+new commands on devices. Only use run_command or get_config when the existing \
+data is insufficient to evaluate an instruction.
 
 If everything is normal, respond with an empty JSON array: []
 If you find issues, respond with a JSON array of findings (same format as \
