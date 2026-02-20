@@ -18,7 +18,7 @@ from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.device.manager import DeviceManager
 from jace.ui.logging_handler import TextualLogHandler
 from jace.ui.notifications import finding_toast_params
-from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsTable
+from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsTable, ThinkingIndicator
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,10 @@ class JaceApp(App):
     #chat-view {
         height: 1fr;
     }
+    #thinking {
+        height: 1;
+        display: none;
+    }
     #chat-input {
         dock: bottom;
         margin-top: 1;
@@ -108,6 +112,7 @@ class JaceApp(App):
                 with TabbedContent(initial="tab-chat", id="tabs"):
                     with TabPane("Chat", id="tab-chat"):
                         yield ChatView(id="chat-view", highlight=True, markup=True)
+                        yield ThinkingIndicator(id="thinking")
                     with TabPane("Findings", id="tab-findings"):
                         yield FindingsTable(id="findings-table")
                     with TabPane("Logs", id="tab-logs"):
@@ -178,15 +183,16 @@ class JaceApp(App):
     async def _handle_query(self, text: str) -> None:
         """Send a natural language query to the agent."""
         chat: ChatView = self.query_one("#chat-view")
+        indicator: ThinkingIndicator = self.query_one("#thinking")
         chat.add_user_message(text)
-        chat.show_thinking()
+        indicator.start()
 
         try:
             response = await self._agent.handle_user_input(text)
-            chat.hide_thinking()
+            indicator.stop()
             chat.add_agent_response(response)
         except Exception as exc:
-            chat.hide_thinking()
+            indicator.stop()
             chat.write(Text(f"Error: {exc}", style="red"))
 
     # ── Shell approval ────────────────────────────────────────────────

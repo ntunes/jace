@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
+from textual.timer import Timer
 from textual.widgets import DataTable, Input, RichLog, Static
 
 if TYPE_CHECKING:
@@ -92,10 +93,6 @@ class FindingsTable(DataTable):
 class ChatView(RichLog):
     """Scrollable chat log with convenience methods for message types."""
 
-    def __init__(self, **kwargs: object) -> None:
-        super().__init__(**kwargs)
-        self._thinking_start: int | None = None
-
     def add_user_message(self, text: str) -> None:
         line = Text()
         line.append("user> ", style="bold cyan")
@@ -111,17 +108,6 @@ class ChatView(RichLog):
 
     def add_system_message(self, text: str) -> None:
         self.write(Text(text, style="dim"))
-
-    def show_thinking(self) -> None:
-        self._thinking_start = len(self.lines)
-        self.add_system_message("Thinking...")
-
-    def hide_thinking(self) -> None:
-        if self._thinking_start is not None:
-            del self.lines[self._thinking_start:]
-            self.virtual_size = self.virtual_size.with_height(len(self.lines))
-            self._thinking_start = None
-            self.refresh()
 
     def show_finding_alert(self, finding: Finding, is_new: bool) -> None:
         from jace.ui.notifications import render_finding_panel
@@ -149,6 +135,34 @@ class ChatView(RichLog):
             self.write(Text("  Approved", style="bold green"))
         else:
             self.write(Text("  Denied", style="bold red"))
+
+
+class ThinkingIndicator(Static):
+    """Animated spinner shown while waiting for the agent response."""
+
+    _FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__("", **kwargs)
+        self._frame = 0
+        self._timer: Timer | None = None
+
+    def start(self) -> None:
+        self._frame = 0
+        self._tick()
+        self.display = True
+        self._timer = self.set_interval(1 / 12, self._tick)
+
+    def stop(self) -> None:
+        self.display = False
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+
+    def _tick(self) -> None:
+        char = self._FRAMES[self._frame % len(self._FRAMES)]
+        self.update(Text(f"  {char} Thinking…", style="dim"))
+        self._frame += 1
 
 
 class ChatInput(Input):
