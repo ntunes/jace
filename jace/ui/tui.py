@@ -59,6 +59,9 @@ class JaceApp(App):
     #tabs {
         height: 1fr;
     }
+    TabPane {
+        height: 1fr;
+    }
     #chat-view {
         height: 1fr;
     }
