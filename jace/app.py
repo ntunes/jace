@@ -18,7 +18,7 @@ from jace.checks.registry import build_default_registry
 from jace.config.settings import Settings, load_config
 from jace.device.manager import DeviceManager
 from jace.llm import create_llm_client
-from jace.ui.tui import JaceApp
+from jace.ui.tui import JACE
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ class Application:
             await self._start_api()
 
         # Run Textual TUI
-        tui = JaceApp(
+        tui = JACE(
             agent=self.agent,
             device_manager=self.device_manager,
             findings_tracker=self.findings_tracker,

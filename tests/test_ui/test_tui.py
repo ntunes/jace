@@ -11,7 +11,7 @@ from jace.agent.findings import Finding, FindingsTracker, Severity
 from jace.config.settings import LLMConfig, ScheduleConfig, Settings
 from jace.device.manager import DeviceManager
 from jace.device.models import DeviceInfo, DeviceStatus
-from jace.ui.tui import JaceApp
+from jace.ui.tui import JACE
 from jace.ui.widgets import ChatInput, ChatView, DeviceList, FindingsTable
 
 from textual.widgets import TabbedContent, TabPane
@@ -22,7 +22,7 @@ def _make_app(
     agent: AgentCore | None = None,
     device_manager: DeviceManager | None = None,
     findings_tracker: FindingsTracker | None = None,
-) -> JaceApp:
+) -> JACE:
     if agent is None:
         agent = MagicMock(spec=AgentCore)
         agent.set_notify_callback = MagicMock()
@@ -39,7 +39,7 @@ def _make_app(
         findings_tracker.active_count = 0
         findings_tracker.critical_count = 0
 
-    return JaceApp(
+    return JACE(
         agent=agent,
         device_manager=device_manager,
         findings_tracker=findings_tracker,

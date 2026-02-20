@@ -44,7 +44,7 @@ Or just type a natural language question about your network devices.\
 SIDEBAR_REFRESH_SECONDS = 3
 
 
-class JaceApp(App):
+class JACE(App):
     """Main Textual application for JACE."""
 
     CSS = """
