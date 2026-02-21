@@ -202,6 +202,44 @@ using the save_memory tool. Focus on:
 Only save genuinely useful observations. If nothing is worth saving, do nothing.\
 """
 
+PROFILE_PROMPT_TEMPLATE = """\
+Analyze the following data from Junos device '{device}' and produce a concise \
+device profile in markdown.
+
+Determine:
+- **Role**: core / PE / P / edge / access / border / route-reflector / other
+- **Protocols**: routing protocols in use (BGP, OSPF, ISIS, LDP, RSVP, etc.) \
+with key parameters (AS number, areas, etc.)
+- **Services**: L3VPN, VPLS, EVPN, internet peering, transit, etc.
+- **Interface profile**: total interfaces, LAGs, IRBs, loopbacks, notable \
+interface types
+- **Scale**: routing instance count, route count summary, BGP peer count \
+(estimate from data)
+
+Output format — start with exactly "## Device Profile" and keep it under 60 \
+lines:
+
+## Device Profile
+
+**Role:** <role>
+**Protocols:** <list>
+**Services:** <list>
+**Interfaces:** <summary>
+**Scale:** <summary>
+
+### Notes
+<any notable observations>
+
+Configuration (filtered):
+{config}
+
+Route summary:
+{routes}
+
+Hardware:
+{hardware}\
+"""
+
 SUMMARIZE_PROMPT = """\
 Summarize the conversation above in a compact paragraph. Focus on:
 - What devices were discussed and their current state
@@ -318,6 +356,57 @@ class AgentCore:
 
         response = await self._llm_tool_loop(self._interactive_ctx)
         return response
+
+    async def profile_device(self, device_name: str) -> str:
+        """Run device characterization and save the profile to memory."""
+        logger.info("Profiling device %s...", device_name)
+
+        # Collect profiling data
+        commands = [
+            (
+                "show configuration | display set"
+                " | match \"routing-instances|protocols|interfaces"
+                "|policy-options|firewall\""
+            ),
+            "show route summary",
+            "show chassis hardware",
+        ]
+
+        outputs: dict[str, str] = {}
+        for cmd in commands:
+            result = await self._device_manager.run_command(device_name, cmd)
+            if result.success:
+                outputs[cmd] = result.output or "(no output)"
+            else:
+                outputs[cmd] = f"(error: {result.error})"
+
+        prompt = PROFILE_PROMPT_TEMPLATE.format(
+            device=device_name,
+            config=outputs[commands[0]],
+            routes=outputs[commands[1]],
+            hardware=outputs[commands[2]],
+        )
+
+        ctx = ConversationContext()
+        ctx.add_user(prompt)
+        profile = await self._llm_tool_loop(ctx, max_iterations=3)
+
+        if self._memory_store:
+            self._memory_store.save("device", device_name, profile)
+
+        logger.info("Device %s profiled successfully", device_name)
+        return profile
+
+    async def profile_all_devices(self) -> None:
+        """Profile all connected devices that don't already have a profile."""
+        devices = self._device_manager.get_connected_devices()
+        for name in devices:
+            if self._memory_store:
+                existing = self._memory_store.get_device(name)
+                if "## Device Profile" in existing:
+                    logger.info("Device %s already profiled, skipping", name)
+                    continue
+            await self.profile_device(name)
 
     async def _run_check(self, category: str, device_name: str,
                          *, _user_triggered: bool = False) -> None:
@@ -921,6 +1010,11 @@ class AgentCore:
                 return self._memory_store.read(
                     args["category"], args.get("key"),
                 )
+
+            elif name == "profile_device":
+                if not self._memory_store:
+                    return "Memory store not configured."
+                return await self.profile_device(args["device"])
 
             elif name == "run_shell":
                 command = args["command"]

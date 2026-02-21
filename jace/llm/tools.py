@@ -339,6 +339,25 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="profile_device",
+        description=(
+            "Run device characterization to determine its network role, "
+            "protocols, services, and scale. Saves the profile to device "
+            "memory. Use after major config changes or when device role "
+            "is unclear."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string",
+                    "description": "Name of the target device",
+                },
+            },
+            "required": ["device"],
+        },
+    ),
+    ToolDefinition(
         name="run_shell",
         description=(
             "Run a shell command on the operator's local machine for network "

@@ -137,6 +137,11 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
             }
         return result
 
+    @app.post("/profile/{device_name}")
+    async def profile_device(device_name: str) -> dict[str, str]:
+        profile = await agent.profile_device(device_name)
+        return {"status": "ok", "device": device_name, "profile": profile}
+
     @app.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest) -> ChatResponse:
         response = await agent.handle_user_input(request.message)

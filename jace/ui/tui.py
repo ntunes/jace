@@ -165,6 +165,7 @@ class JACE(App):
         connected = self._device_manager.get_connected_devices()
         logger.info("Connected to %d device(s): %s", len(connected), connected)
         self._refresh_sidebar()
+        await self._agent.profile_all_devices()
         self._agent.start_monitoring()
 
     # ── Input handling ──────────────────────────────────────────────────
