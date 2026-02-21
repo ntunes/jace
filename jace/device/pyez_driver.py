@@ -121,7 +121,7 @@ class PyEZDriver(DeviceDriver):
             try:
                 await loop.run_in_executor(_executor, self._dev.close)
             except Exception as exc:
-                logger.warning("PyEZ close error for %s: %s", self.host, exc)
+                logger.warning("PyEZ close error for %s: %s", self.host, exc, exc_info=True)
             self._connected = False
             self._dev = None
             logger.info("PyEZ disconnected from %s", self.host)
@@ -158,10 +158,10 @@ class PyEZDriver(DeviceDriver):
                     driver_used="pyez", success=True,
                 )
             except Exception as exc:
-                logger.warning("PyEZ RPC %s failed: %s", rpc_name, exc)
+                logger.warning("PyEZ RPC %s failed: %s", rpc_name, exc, exc_info=True)
                 return CommandResult(
                     command=command, output="", success=False,
-                    error=str(exc), driver_used="pyez",
+                    error=f"{type(exc).__name__}: {exc}", driver_used="pyez",
                 )
 
         # Fallback: use PyEZ cli() for unrecognized commands
@@ -174,9 +174,10 @@ class PyEZDriver(DeviceDriver):
                 driver_used="pyez-cli", success=True,
             )
         except Exception as exc:
+            logger.warning("PyEZ CLI fallback failed: %s", exc, exc_info=True)
             return CommandResult(
                 command=command, output="", success=False,
-                error=str(exc), driver_used="pyez-cli",
+                error=f"{type(exc).__name__}: {exc}", driver_used="pyez-cli",
             )
 
     async def get_config(self, section: str | None = None,
@@ -201,8 +202,8 @@ class PyEZDriver(DeviceDriver):
             )
             return _extract_config_text(result, format)
         except Exception as exc:
-            logger.error("PyEZ get_config failed: %s", exc)
-            return f"Error: {exc}"
+            logger.error("PyEZ get_config failed: %s", exc, exc_info=True)
+            return f"Error: {type(exc).__name__}: {exc}"
 
     async def get_facts(self) -> dict:
         if not self._connected or self._dev is None:
@@ -212,8 +213,8 @@ class PyEZDriver(DeviceDriver):
             await loop.run_in_executor(_executor, self._dev.facts_refresh)
             return dict(self._dev.facts)
         except Exception as exc:
-            logger.error("PyEZ get_facts failed: %s", exc)
-            return {"error": str(exc)}
+            logger.error("PyEZ get_facts failed: %s", exc, exc_info=True)
+            return {"error": f"{type(exc).__name__}: {exc}"}
 
     def _match_rpc(self, command: str) -> tuple[str, dict] | None:
         """Match a CLI command to an RPC entry, handling parameterized commands."""

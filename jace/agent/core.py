@@ -1116,8 +1116,8 @@ class AgentCore:
                 return f"Unknown tool: {name}"
 
         except Exception as exc:
-            logger.error("Tool execution error (%s): %s", name, exc)
-            return f"Tool error: {exc}"
+            logger.error("Tool execution error (%s): %s", name, exc, exc_info=True)
+            return f"Tool error: {type(exc).__name__}: {exc}"
 
     @staticmethod
     def _extract_json_array(text: str) -> list[dict]:

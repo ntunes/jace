@@ -102,9 +102,9 @@ class DeviceManager:
 
             return True
         except Exception as exc:
-            logger.error("Failed to connect to %s: %s", device_name, exc)
+            logger.error("Failed to connect to %s: %s", device_name, exc, exc_info=True)
             info.status = DeviceStatus.ERROR
-            info.error = str(exc)
+            info.error = f"{type(exc).__name__}: {exc}"
             return False
 
     async def disconnect_all(self) -> None:
@@ -117,14 +117,14 @@ class DeviceManager:
             try:
                 await driver.disconnect()
             except Exception as exc:
-                logger.warning("Error disconnecting %s: %s", device_name, exc)
+                logger.warning("Error disconnecting %s: %s", device_name, exc, exc_info=True)
 
         fallback = self._fallback_drivers.pop(device_name, None)
         if fallback:
             try:
                 await fallback.disconnect()
             except Exception as exc:
-                logger.warning("Error disconnecting %s fallback: %s", device_name, exc)
+                logger.warning("Error disconnecting %s fallback: %s", device_name, exc, exc_info=True)
 
         if device_name in self._info:
             self._info[device_name].status = DeviceStatus.DISCONNECTED

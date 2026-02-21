@@ -39,7 +39,7 @@ class CheckRegistry:
                 all_results.update(results)
             except Exception as exc:
                 logger.error("Check %s failed for %s: %s",
-                             check_func.__name__, device_name, exc)
+                             check_func.__name__, device_name, exc, exc_info=True)
         return all_results
 
 

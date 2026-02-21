@@ -56,7 +56,7 @@ class NetmikoDriver(DeviceDriver):
             try:
                 await loop.run_in_executor(_executor, self._conn.disconnect)
             except Exception as exc:
-                logger.warning("Netmiko close error for %s: %s", self.host, exc)
+                logger.warning("Netmiko close error for %s: %s", self.host, exc, exc_info=True)
             self._connected = False
             self._conn = None
             logger.info("Netmiko disconnected from %s", self.host)
@@ -79,10 +79,10 @@ class NetmikoDriver(DeviceDriver):
                 driver_used="netmiko", success=True,
             )
         except Exception as exc:
-            logger.error("Netmiko command failed: %s", exc)
+            logger.error("Netmiko command failed: %s", exc, exc_info=True)
             return CommandResult(
                 command=command, output="", success=False,
-                error=str(exc), driver_used="netmiko",
+                error=f"{type(exc).__name__}: {exc}", driver_used="netmiko",
             )
 
     async def get_config(self, section: str | None = None,
