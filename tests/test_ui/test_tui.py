@@ -27,9 +27,11 @@ def _make_app(
         agent = MagicMock(spec=AgentCore)
         agent.set_notify_callback = MagicMock()
         agent.handle_user_input = AsyncMock(return_value="Test response")
+        agent.profile_all_devices = AsyncMock()
 
     if device_manager is None:
         device_manager = MagicMock(spec=DeviceManager)
+        device_manager.connect_all = AsyncMock()
         device_manager.list_devices = MagicMock(return_value=[])
         device_manager.get_connected_devices = MagicMock(return_value=[])
 

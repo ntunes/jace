@@ -160,14 +160,28 @@ class JACE(App):
             logging.getLogger().removeHandler(self._log_handler)
             self._log_handler = None
 
-    @work(exclusive=False)
-    async def _connect_and_start(self) -> None:
-        """Connect to devices and start monitoring in the background."""
+    @work(thread=True)
+    def _connect_and_start(self) -> None:
+        """Connect to devices in a background OS thread."""
         logger.info("Connecting to devices...")
-        await self._device_manager.connect_all(on_connect=self._refresh_sidebar)
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(
+                self._device_manager.connect_all(
+                    on_connect=lambda: self.call_from_thread(self._refresh_sidebar),
+                )
+            )
+        finally:
+            loop.close()
+
         connected = self._device_manager.get_connected_devices()
         logger.info("Connected to %d device(s): %s", len(connected), connected)
-        self._refresh_sidebar()
+        self.call_from_thread(self._refresh_sidebar)
+        self.call_from_thread(self._post_connect)
+
+    @work(exclusive=False)
+    async def _post_connect(self) -> None:
+        """Profile devices and start monitoring (main event loop)."""
         await self._agent.profile_all_devices()
         self._agent.start_monitoring()
 
