@@ -15,6 +15,7 @@ from jace.agent.memory import MemoryStore
 from jace.agent.metrics_store import MetricsStore
 from jace.agent.watch import WatchManager
 from jace.checks.registry import build_default_registry
+from jace.mcp.manager import MCPManager
 from jace.config.settings import Settings, load_config
 from jace.device.manager import DeviceManager
 from jace.llm import create_llm_client
@@ -72,6 +73,11 @@ class Application:
                 window_seconds=self.settings.correlation.window_seconds,
             )
 
+        # MCP server manager (optional)
+        self.mcp_manager: MCPManager | None = None
+        if self.settings.mcp_servers:
+            self.mcp_manager = MCPManager(self.settings.mcp_servers)
+
         # Watch manager — lightweight metric collection
         self.watch_manager = WatchManager(
             device_manager=self.device_manager,
@@ -90,6 +96,7 @@ class Application:
             memory_store=self.memory_store,
             anomaly_accumulator=self.anomaly_accumulator,
             watch_manager=self.watch_manager,
+            mcp_manager=self.mcp_manager,
         )
         self._api_server = None
 
@@ -111,6 +118,12 @@ class Application:
         if api or self.settings.api.enabled:
             await self._start_api()
 
+        # Connect to MCP servers (if configured)
+        if self.mcp_manager is not None:
+            from jace.llm.tools import AGENT_TOOLS
+            builtin_names = {t.name for t in AGENT_TOOLS}
+            await self.mcp_manager.connect_all(builtin_names=builtin_names)
+
         # Run Textual TUI — device connections happen in the background
         tui = JACE(
             agent=self.agent,
@@ -125,6 +138,8 @@ class Application:
     async def shutdown(self) -> None:
         """Graceful shutdown."""
         logger.info("Shutting down...")
+        if self.mcp_manager is not None:
+            await self.mcp_manager.close()
         self.watch_manager.stop_all()
         await self.agent.stop_monitoring()
         await self.device_manager.disconnect_all()

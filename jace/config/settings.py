@@ -96,6 +96,16 @@ class StorageConfig(BaseModel):
     path: str = "~/.jace/"
 
 
+class MCPServerConfig(BaseModel):
+    name: str
+    transport: str = "stdio"                          # stdio | sse | streamable-http
+    command: str | None = None                        # stdio only
+    args: list[str] = Field(default_factory=list)     # stdio only
+    url: str | None = None                            # sse / streamable-http
+    headers: dict[str, str] | None = None             # sse / streamable-http
+    env: dict[str, str] | None = None                 # stdio only
+
+
 class Settings(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     devices: list[DeviceConfig] = Field(default_factory=list)
@@ -106,6 +116,7 @@ class Settings(BaseModel):
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     correlation: CorrelationConfig = Field(default_factory=CorrelationConfig)
+    mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
     ssh_config: str = "~/.ssh/config"

@@ -9,6 +9,10 @@ import shlex
 from typing import Any, Callable, Awaitable
 
 from jace.agent.accumulator import AnomalyAccumulator, AnomalyBatch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jace.mcp.manager import MCPManager
 from jace.agent.anomaly import AnomalyDetector, AnomalyResult
 from jace.agent.context import ConversationContext
 from jace.agent.findings import Finding, FindingsTracker, Severity
@@ -236,7 +240,8 @@ class AgentCore:
                  heartbeat_manager: HeartbeatManager | None = None,
                  memory_store: MemoryStore | None = None,
                  anomaly_accumulator: AnomalyAccumulator | None = None,
-                 watch_manager: WatchManager | None = None) -> None:
+                 watch_manager: WatchManager | None = None,
+                 mcp_manager: MCPManager | None = None) -> None:
         self._settings = settings
         self._llm = llm
         self._device_manager = device_manager
@@ -247,6 +252,7 @@ class AgentCore:
         self._heartbeat_manager = heartbeat_manager
         self._memory_store = memory_store
         self._watch_manager = watch_manager
+        self._mcp_manager = mcp_manager
         self._accumulator = anomaly_accumulator
         if self._accumulator is not None:
             self._accumulator.set_callback(self._investigate_anomaly_batch)
@@ -689,10 +695,13 @@ class AgentCore:
             await self._compact_context(ctx)
 
         system_prompt = self._build_system_prompt()
+        all_tools = AGENT_TOOLS
+        if self._mcp_manager and self._mcp_manager.tools:
+            all_tools = AGENT_TOOLS + self._mcp_manager.tools
         for _ in range(max_iterations):
             response = await self._llm.chat(
                 messages=ctx.messages,
-                tools=AGENT_TOOLS,
+                tools=all_tools,
                 system=system_prompt,
                 max_tokens=self._settings.llm.max_tokens,
             )
@@ -936,6 +945,9 @@ class AgentCore:
                     output = output[:50_000] + "\n... (output truncated)"
 
                 return output or "(no output)"
+
+            elif self._mcp_manager and self._mcp_manager.has_tool(name):
+                return await self._mcp_manager.call_tool(name, args)
 
             else:
                 return f"Unknown tool: {name}"

@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "jace"
 version = "0.1.0"
 description = "JACE: Autonomous Control Engine for network device monitoring and troubleshooting"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
     "anthropic>=0.40",
@@ -20,7 +20,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "apscheduler>=3.10",
     "pydantic>=2.9",
-    "eval_type_backport>=0.2; python_version < '3.10'",
+    "mcp>=1.0",
     "textual>=0.85",
 ]
 

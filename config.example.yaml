@@ -60,6 +60,16 @@ correlation:
   enabled: true
   window_seconds: 30.0    # batch anomalies per device over this window
 
+# mcp_servers:
+#   - name: weather
+#     command: npx
+#     args: ["-y", "@modelcontextprotocol/server-weather"]
+#   - name: remote-tools
+#     transport: streamable-http
+#     url: https://api.example.com/mcp
+#     headers:
+#       Authorization: "Bearer ${API_TOKEN}"
+
 blocked_commands:
   - "request *"
   - "clear *"
