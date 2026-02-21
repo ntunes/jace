@@ -56,6 +56,11 @@ class ConversationContext:
         if len(self._messages) > keep_recent:
             self._messages = self._messages[-keep_recent:]
 
+    @property
+    def raw_messages(self) -> list[Message]:
+        """Return raw messages without synthetic summary prefix."""
+        return list(self._messages)
+
     def clear(self) -> None:
         self._messages.clear()
         self._summary = None

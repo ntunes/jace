@@ -262,6 +262,14 @@ class AgentCore:
         self._approval_callback: ApprovalCallback | None = None
         self._heartbeat_task: asyncio.Task | None = None
 
+    def get_chat_history(self, limit: int = 50) -> list[dict[str, str]]:
+        """Return simplified chat history (user/assistant messages only)."""
+        result = []
+        for msg in self._interactive_ctx.raw_messages:
+            if msg.role in (Role.USER, Role.ASSISTANT):
+                result.append({"role": msg.role.value, "content": msg.content})
+        return result[-limit:]
+
     def set_notify_callback(self, callback: NotifyCallback) -> None:
         self._notify_callback = callback
 

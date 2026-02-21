@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from jace.agent.core import AgentCore
@@ -20,6 +20,17 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+
+
+class TabRequest(BaseModel):
+    tab: str
+
+
+TAB_MAP = {
+    "chat": "tab-chat",
+    "findings": "tab-findings",
+    "logs": "tab-logs",
+}
 
 
 def create_api_app(agent: AgentCore, device_manager: DeviceManager,
@@ -103,6 +114,47 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
     async def chat(request: ChatRequest) -> ChatResponse:
         response = await agent.handle_user_input(request.message)
         return ChatResponse(response=response)
+
+    @app.get("/screenshot")
+    async def screenshot() -> dict[str, str]:
+        tui = getattr(app.state, "tui", None)
+        if tui is None:
+            raise HTTPException(status_code=503, detail="TUI not yet available")
+        svg = tui.export_screenshot()
+        return {"svg": svg}
+
+    @app.get("/logs")
+    async def get_logs(lines: int = 50) -> list[dict[str, str]]:
+        handler = getattr(app.state, "log_handler", None)
+        if handler is None:
+            return []
+        return handler.get_entries(lines)
+
+    @app.post("/tabs")
+    async def switch_tab(request: TabRequest) -> dict[str, str]:
+        tab_id = TAB_MAP.get(request.tab)
+        if tab_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown tab '{request.tab}'. "
+                       f"Valid: {', '.join(TAB_MAP)}",
+            )
+        tui = getattr(app.state, "tui", None)
+        if tui is None:
+            raise HTTPException(status_code=503, detail="TUI not yet available")
+
+        from textual.widgets import TabbedContent
+
+        def _switch() -> None:
+            tabs = tui.query_one("#tabs", TabbedContent)
+            tabs.active = tab_id
+
+        tui.call_later(_switch)
+        return {"tab": request.tab}
+
+    @app.get("/chat/history")
+    async def chat_history(limit: int = 50) -> list[dict[str, str]]:
+        return agent.get_chat_history(limit)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

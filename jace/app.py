@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 from jace.agent.accumulator import AnomalyAccumulator
@@ -22,6 +24,29 @@ from jace.llm import create_llm_client
 from jace.ui.tui import JACE
 
 logger = logging.getLogger(__name__)
+
+
+class BufferedLogHandler(logging.Handler):
+    """In-memory log handler that stores recent entries for API access."""
+
+    def __init__(self, capacity: int = 500) -> None:
+        super().__init__()
+        self._entries: deque[dict[str, str]] = deque(maxlen=capacity)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._entries.append({
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc,
+            ).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": self.format(record),
+        })
+
+    def get_entries(self, lines: int = 50) -> list[dict[str, str]]:
+        """Return the most recent *lines* log entries."""
+        entries = list(self._entries)
+        return entries[-lines:]
 
 
 class Application:
@@ -99,6 +124,8 @@ class Application:
             mcp_manager=self.mcp_manager,
         )
         self._api_server = None
+        self._api_app = None
+        self._log_handler: BufferedLogHandler | None = None
 
     async def start(self, *, api: bool = False) -> None:
         """Initialize and start the application."""
@@ -130,6 +157,11 @@ class Application:
             device_manager=self.device_manager,
             findings_tracker=self.findings_tracker,
         )
+
+        # Expose TUI to API server for screenshot/tab endpoints
+        if self._api_app is not None:
+            self._api_app.state.tui = tui
+
         try:
             await tui.run_async()
         finally:
@@ -155,6 +187,12 @@ class Application:
         import uvicorn
 
         app = create_api_app(self.agent, self.device_manager, self.findings_tracker)
+        self._api_app = app
+
+        # Attach log handler so the /logs endpoint can access entries
+        if self._log_handler is not None:
+            app.state.log_handler = self._log_handler
+
         config = uvicorn.Config(
             app,
             host=self.settings.api.host,
@@ -169,6 +207,11 @@ class Application:
     def _setup_logging(self) -> None:
         # Set level only — TUI installs its own handler in on_mount()
         logging.root.setLevel(logging.INFO)
+
+        # Install buffered log handler for API /logs endpoint
+        self._log_handler = BufferedLogHandler()
+        logging.root.addHandler(self._log_handler)
+
         # Quiet noisy libraries — JACE wraps all calls in try/except and
         # provides its own error messages, so internal SSH tracebacks from
         # paramiko/ncclient/netmiko only add noise (especially before the TUI

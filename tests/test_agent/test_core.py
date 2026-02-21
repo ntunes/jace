@@ -22,7 +22,7 @@ from jace.checks.registry import CheckRegistry
 from jace.config.settings import CorrelationConfig, LLMConfig, ScheduleConfig, Settings
 from jace.device.manager import DeviceManager
 from jace.device.models import CommandResult
-from jace.llm.base import Response
+from jace.llm.base import Response, Role
 
 
 def _make_agent(
@@ -575,3 +575,43 @@ def test_correlation_config_defaults():
     config = CorrelationConfig()
     assert config.enabled is True
     assert config.window_seconds == 30.0
+
+
+# ---------- get_chat_history tests ----------
+
+
+def test_get_chat_history_filters_user_assistant():
+    """get_chat_history should only return user and assistant messages."""
+    agent = _make_agent()
+    ctx = agent._interactive_ctx
+    ctx.add_user("hello")
+    ctx.add_assistant(
+        MagicMock(role=Role.ASSISTANT, content="hi", tool_calls=None),
+    )
+    ctx.add_tool_result("call-1", "tool result")
+    ctx.add_user("follow up")
+
+    history = agent.get_chat_history()
+    assert len(history) == 3
+    assert history[0] == {"role": "user", "content": "hello"}
+    assert history[1] == {"role": "assistant", "content": "hi"}
+    assert history[2] == {"role": "user", "content": "follow up"}
+
+
+def test_get_chat_history_respects_limit():
+    """get_chat_history should respect the limit parameter."""
+    agent = _make_agent()
+    ctx = agent._interactive_ctx
+    for i in range(10):
+        ctx.add_user(f"msg {i}")
+
+    history = agent.get_chat_history(limit=3)
+    assert len(history) == 3
+    assert history[0]["content"] == "msg 7"
+    assert history[2]["content"] == "msg 9"
+
+
+def test_get_chat_history_empty():
+    """get_chat_history should return empty list when no messages."""
+    agent = _make_agent()
+    assert agent.get_chat_history() == []

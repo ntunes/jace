@@ -33,7 +33,7 @@ schedule:
   config:     86400  # once per day
 
 api:
-  enabled: false
+  enabled: false       # set to true for JACE MCP server (jace-mcp) support
   host: 127.0.0.1
   port: 8080
 
