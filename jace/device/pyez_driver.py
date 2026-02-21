@@ -100,6 +100,7 @@ class PyEZDriver(DeviceDriver):
             "port": self.port,
             "conn_open_timeout": self.timeout,
             "auto_probe": 0,
+            "huge_tree": True,
         }
         if self.password:
             kwargs["passwd"] = self.password
