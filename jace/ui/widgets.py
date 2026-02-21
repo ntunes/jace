@@ -168,8 +168,14 @@ class ThinkingIndicator(Static):
         super().__init__("", **kwargs)
         self._frame = 0
         self._timer: Timer | None = None
+        self._status = "Thinking…"
+
+    def set_status(self, message: str) -> None:
+        """Update the status text shown alongside the spinner."""
+        self._status = message
 
     def start(self) -> None:
+        self._status = "Thinking…"
         self._frame = 0
         self._tick()
         self.display = True
@@ -183,7 +189,7 @@ class ThinkingIndicator(Static):
 
     def _tick(self) -> None:
         char = self._FRAMES[self._frame % len(self._FRAMES)]
-        self.update(Text(f"  {char} Thinking…", style="dim"))
+        self.update(Text(f"  {char} {self._status}", style="dim"))
         self._frame += 1
 
 

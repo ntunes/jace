@@ -138,6 +138,9 @@ class JACE(App):
         # Register shell approval callback
         self._agent.set_approval_callback(self._request_shell_approval)
 
+        # Register status callback for dynamic thinking indicator
+        self._agent.set_status_callback(self._on_status)
+
         # Start sidebar refresh timer
         self.set_interval(SIDEBAR_REFRESH_SECONDS, self._refresh_sidebar)
 
@@ -233,6 +236,13 @@ class JACE(App):
 
         chat.add_approval_result(result)
         return result
+
+    # ── Status callback ─────────────────────────────────────────────────
+
+    def _on_status(self, message: str) -> None:
+        """Update the thinking indicator with a contextual status message."""
+        indicator: ThinkingIndicator = self.query_one("#thinking")
+        indicator.set_status(message)
 
     # ── Slash commands ──────────────────────────────────────────────────
 

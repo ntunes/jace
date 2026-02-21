@@ -256,6 +256,9 @@ NotifyCallback = Callable[[Finding, bool], Awaitable[None]]  # (finding, is_new)
 # Approval callback type: (command, reason) → approved
 ApprovalCallback = Callable[[str, str], Awaitable[bool]]
 
+# Status callback type: (message) → None
+StatusCallback = Callable[[str], None]
+
 # Shell command blocklist — prefixes/keywords that are never allowed
 SHELL_BLOCKED_PATTERNS: list[str] = [
     "sudo", "rm", "reboot", "shutdown", "halt", "poweroff", "mkfs", "dd",
@@ -301,6 +304,7 @@ class AgentCore:
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
         self._approval_callback: ApprovalCallback | None = None
+        self._status_callback: StatusCallback | None = None
         self._heartbeat_task: asyncio.Task | None = None
 
     def get_chat_history(self, limit: int = 50) -> list[dict[str, str]]:
@@ -316,6 +320,9 @@ class AgentCore:
 
     def set_approval_callback(self, callback: ApprovalCallback) -> None:
         self._approval_callback = callback
+
+    def set_status_callback(self, callback: StatusCallback) -> None:
+        self._status_callback = callback
 
     def start_monitoring(self) -> None:
         """Start the background health check scheduler."""
@@ -787,6 +794,46 @@ class AgentCore:
         ctx.compact(summary, keep_recent=10)
         logger.info("Context compacted — summary length: %d chars", len(summary))
 
+    @staticmethod
+    def _tool_status_message(tool_call: ToolCall) -> str:
+        """Map a tool call to a human-readable status message."""
+        name = tool_call.name
+        args = tool_call.arguments
+        device = args.get("device", "")
+
+        if name == "run_command":
+            command = args.get("command", "")
+            return f"Collecting '{command}' from {device}"
+        elif name == "get_config":
+            return f"Retrieving configuration from {device}"
+        elif name == "get_device_facts":
+            return f"Fetching facts from {device}"
+        elif name == "list_devices":
+            return "Listing devices"
+        elif name == "get_findings":
+            return "Reviewing findings"
+        elif name == "run_health_check":
+            category = args.get("category", "health")
+            return f"Running {category} check on {device}"
+        elif name == "get_metrics":
+            return f"Querying metrics for {device}"
+        elif name == "compare_config":
+            return f"Comparing configuration on {device}"
+        elif name == "manage_heartbeat":
+            return "Managing heartbeat"
+        elif name == "manage_watches":
+            return "Managing watches"
+        elif name == "save_memory":
+            return "Saving to memory"
+        elif name == "read_memory":
+            return "Recalling memory"
+        elif name == "profile_device":
+            return f"Profiling {device}"
+        elif name == "run_shell":
+            return "Running shell command"
+        else:
+            return f"Calling {name}"
+
     async def _llm_tool_loop(self, ctx: ConversationContext,
                              max_iterations: int = 10) -> str:
         """Run the LLM tool-use loop until the LLM produces a final text response."""
@@ -798,7 +845,11 @@ class AgentCore:
         all_tools = AGENT_TOOLS
         if self._mcp_manager and self._mcp_manager.tools:
             all_tools = AGENT_TOOLS + self._mcp_manager.tools
+        is_interactive = ctx is self._interactive_ctx
         for _ in range(max_iterations):
+            if is_interactive and self._status_callback:
+                self._status_callback("Thinking…")
+
             response = await self._llm.chat(
                 messages=ctx.messages,
                 tools=all_tools,
@@ -823,6 +874,8 @@ class AgentCore:
             ctx.add_assistant(assistant_msg)
 
             for tool_call in response.tool_calls:
+                if is_interactive and self._status_callback:
+                    self._status_callback(self._tool_status_message(tool_call))
                 result = await self._execute_tool(tool_call)
                 ctx.add_tool_result(tool_call.id, result)
 
