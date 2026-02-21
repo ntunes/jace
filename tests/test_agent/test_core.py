@@ -625,9 +625,9 @@ def test_get_chat_history_empty():
 def test_scheduler_receives_device_schedules():
     """Scheduler should receive device_schedules from settings."""
     sched = ScheduleConfig(chassis=600, interfaces=300)
-    agent = _make_agent(device_schedules={"r1": sched})
+    agent = _make_agent(device_schedules={"lab/r1": sched})
 
-    assert agent._scheduler._device_schedules == {"r1": sched}
+    assert agent._scheduler._device_schedules == {"lab/r1": sched}
     assert agent._scheduler._default_intervals["chassis"] == 300  # from default ScheduleConfig
 
 

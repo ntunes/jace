@@ -844,12 +844,39 @@ class AgentCore:
                     return f"Blocked command: '{pattern}' is not allowed."
         return None
 
+    def _resolve_device_arg(self, args: dict[str, Any]) -> str | None:
+        """Resolve the 'device' argument through DeviceManager.resolve_device.
+
+        Returns the resolved composite key, or an error string if resolution
+        fails.  On success the args dict is updated in-place.
+        """
+        device = args.get("device")
+        if device is None:
+            return None
+        try:
+            resolved = self._device_manager.resolve_device(device)
+            args["device"] = resolved
+            return None  # no error
+        except (KeyError, ValueError) as exc:
+            return str(exc)
+
     async def _execute_tool(self, tool_call: ToolCall) -> str:
         """Execute a tool call and return the result as a string."""
         name = tool_call.name
         args = tool_call.arguments
 
         try:
+            # Resolve device identifiers for device-targeting tools
+            _device_tools = {
+                "run_command", "get_config", "get_device_facts",
+                "run_health_check", "get_metrics", "compare_config",
+                "profile_device",
+            }
+            if name in _device_tools:
+                err = self._resolve_device_arg(args)
+                if err:
+                    return f"Error: {err}"
+
             if name == "run_command":
                 result = await self._device_manager.run_command(
                     args["device"], args["command"],
@@ -877,6 +904,7 @@ class AgentCore:
                 for d in devices:
                     entry: dict = {
                         "name": d.name, "host": d.host,
+                        "device_key": d.device_key,
                         "status": d.status.value,
                         "model": d.model, "version": d.version,
                     }
@@ -888,8 +916,14 @@ class AgentCore:
                 return json.dumps(result, indent=2)
 
             elif name == "get_findings":
+                device = args.get("device")
+                if device:
+                    try:
+                        device = self._device_manager.resolve_device(device)
+                    except (KeyError, ValueError) as exc:
+                        return f"Error: {exc}"
                 findings = self._findings.get_active(
-                    device=args.get("device"),
+                    device=device,
                     severity=Severity(args["severity"]) if "severity" in args else None,
                     category=args.get("category"),
                 )
@@ -973,6 +1007,10 @@ class AgentCore:
                                   "parse_pattern"):
                         if field not in args:
                             return f"Missing required parameter: {field}"
+                    # Resolve device for watch add
+                    err = self._resolve_device_arg(args)
+                    if err:
+                        return f"Error: {err}"
                     watch = Watch(
                         id="",
                         device=args["device"],
@@ -1000,16 +1038,32 @@ class AgentCore:
             elif name == "save_memory":
                 if not self._memory_store:
                     return "Memory store not configured."
-                return self._memory_store.save(
-                    args["category"], args.get("key", ""), args["content"],
-                )
+                category = args["category"]
+                key = args.get("key", "")
+                # Resolve device key for device category
+                if category == "device" and key:
+                    try:
+                        resolved = self._device_manager.resolve_device(key)
+                        if isinstance(resolved, str):
+                            key = resolved
+                    except (KeyError, ValueError):
+                        pass  # allow saving for unknown devices
+                return self._memory_store.save(category, key, args["content"])
 
             elif name == "read_memory":
                 if not self._memory_store:
                     return "Memory store not configured."
-                return self._memory_store.read(
-                    args["category"], args.get("key"),
-                )
+                category = args["category"]
+                key = args.get("key")
+                # Resolve device key for device category
+                if category == "device" and key:
+                    try:
+                        resolved = self._device_manager.resolve_device(key)
+                        if isinstance(resolved, str):
+                            key = resolved
+                    except (KeyError, ValueError):
+                        pass  # allow reading for unknown devices
+                return self._memory_store.read(category, key)
 
             elif name == "profile_device":
                 if not self._memory_store:

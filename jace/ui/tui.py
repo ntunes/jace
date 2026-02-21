@@ -266,7 +266,7 @@ class JACE(App):
                 }.get(d.status.value, "white")
                 line = Text()
                 line.append(f"  {d.status.value:12s} ", style=status_style)
-                line.append(d.name, style="bold")
+                line.append(d.device_key, style="bold")
                 line.append(f" ({d.host}) ", style="")
                 line.append(f"{d.model} {d.version}", style="dim")
                 chat.write(line)
@@ -281,6 +281,11 @@ class JACE(App):
                 chat.write(Text("Usage: /check <device> <category>", style="yellow"))
                 return
             device_name, category = parts[1], parts[2]
+            try:
+                device_name = self._device_manager.resolve_device(device_name)
+            except (KeyError, ValueError) as exc:
+                chat.write(Text(f"Error: {exc}", style="red"))
+                return
             chat.add_system_message(f"Running {category} check on {device_name}...")
             try:
                 response = await self._agent.handle_user_input(

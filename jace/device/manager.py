@@ -35,8 +35,9 @@ class DeviceManager:
         self._ssh_config = ssh_config
 
     def add_device(self, config: DeviceConfig) -> None:
-        self._devices[config.name] = config
-        self._info[config.name] = DeviceInfo(
+        key = config.device_key
+        self._devices[key] = config
+        self._info[key] = DeviceInfo(
             name=config.name, host=config.host,
             category=config.category,
         )
@@ -202,6 +203,37 @@ class DeviceManager:
 
     def get_connected_devices(self) -> list[str]:
         return [name for name, d in self._drivers.items() if d.is_connected]
+
+    def resolve_device(self, identifier: str) -> str:
+        """Resolve a user-provided device identifier to a composite key.
+
+        Accepts either a composite key (``"category/name"``) or a bare name.
+        Bare names are resolved if they match exactly one device across all
+        categories.
+
+        Raises:
+            KeyError: if no device matches
+            ValueError: if a bare name matches multiple devices
+        """
+        # Direct match on composite key
+        if identifier in self._devices:
+            return identifier
+
+        # Bare-name lookup across all devices
+        matches = [
+            key for key, cfg in self._devices.items()
+            if cfg.name == identifier
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            raise KeyError(f"Unknown device: '{identifier}'")
+        categories = [self._devices[m].category or "(uncategorized)" for m in matches]
+        raise ValueError(
+            f"Ambiguous device name '{identifier}' — exists in categories: "
+            + ", ".join(categories)
+            + ". Use 'category/name' format."
+        )
 
     def _resolve_ssh_config(self, config: DeviceConfig) -> str | None:
         """Resolve SSH config path: per-device override > global default.

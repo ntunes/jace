@@ -54,6 +54,12 @@ class DeviceConfig(BaseModel):
     timeout: int = 30
     category: str = ""
 
+    @property
+    def device_key(self) -> str:
+        if self.category:
+            return f"{self.category}/{self.name}"
+        return self.name
+
 
 class ScheduleConfig(BaseModel):
     chassis: int = 300
@@ -268,7 +274,7 @@ def _load_inventory(
 
     inventory = InventoryConfig.model_validate(raw)
 
-    seen_names: set[str] = set()
+    seen_names: dict[str, set[str]] = {}  # category → {names}
     devices: list[DeviceConfig] = []
 
     for cat_name, cat in inventory.categories.items():
@@ -281,17 +287,21 @@ def _load_inventory(
                 f"category '{cat_name}'",
             )
 
-        # Build per-device schedule mapping
+        cat_seen = seen_names.setdefault(cat_name, set())
+
+        # Build per-device schedule mapping (composite key)
         if cat.schedule:
             for dev in cat.devices:
-                settings.device_schedules[dev.name] = cat.schedule
+                key = f"{cat_name}/{dev.name}"
+                settings.device_schedules[key] = cat.schedule
 
         for dev in cat.devices:
-            if dev.name in seen_names:
+            if dev.name in cat_seen:
                 raise ValueError(
-                    f"Duplicate device name '{dev.name}' in inventory"
+                    f"Duplicate device name '{dev.name}' "
+                    f"in category '{cat_name}'"
                 )
-            seen_names.add(dev.name)
+            cat_seen.add(dev.name)
 
             creds = _merge_device_credentials(
                 cat_creds, inventory.credentials, dev,

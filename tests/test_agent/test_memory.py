@@ -57,6 +57,57 @@ class TestDeviceMemory:
         assert store.get_all_device_names() == []
 
 
+class TestCategorizedDeviceMemory:
+    def test_save_and_get_categorized_device(self, store: MemoryStore) -> None:
+        store.save_device("production/mx-01", "Runs Junos 21.4")
+        content = store.get_device("production/mx-01")
+        assert "Runs Junos 21.4" in content
+        assert "# Device: mx-01" in content
+        # File should be in nested directory
+        path = store._base / "devices" / "production" / "mx-01.md"
+        assert path.is_file()
+
+    def test_get_all_device_names_with_categories(self, store: MemoryStore) -> None:
+        store.save_device("alpha", "note")
+        store.save_device("production/beta", "note")
+        store.save_device("lab/gamma", "note")
+        names = store.get_all_device_names()
+        assert names == ["alpha", "lab/gamma", "production/beta"]
+
+    def test_migrate_device_files(self, store: MemoryStore) -> None:
+        """Legacy flat file is migrated to nested category path."""
+        # Create a legacy flat file
+        flat_path = store._base / "devices" / "mx-01.md"
+        flat_path.write_text("# Device: mx-01\n\nLegacy data\n")
+
+        migrated = store.migrate_device_files(["production/mx-01"])
+        assert migrated == 1
+
+        # Old file should be gone
+        assert not flat_path.exists()
+        # New file should exist with same content
+        content = store.get_device("production/mx-01")
+        assert "Legacy data" in content
+
+    def test_migrate_skips_existing_nested(self, store: MemoryStore) -> None:
+        """Migration should not overwrite existing nested files."""
+        # Create both flat and nested
+        flat_path = store._base / "devices" / "mx-01.md"
+        flat_path.write_text("# Device: mx-01\n\nOld data\n")
+        store.save_device("production/mx-01", "New data")
+
+        migrated = store.migrate_device_files(["production/mx-01"])
+        assert migrated == 0
+        # Nested file should keep new data
+        content = store.get_device("production/mx-01")
+        assert "New data" in content
+
+    def test_migrate_skips_bare_keys(self, store: MemoryStore) -> None:
+        """Bare keys (uncategorized) should not be migrated."""
+        migrated = store.migrate_device_files(["r1"])
+        assert migrated == 0
+
+
 class TestUserPreferences:
     def test_save_and_get(self, store: MemoryStore) -> None:
         store.save_user_preferences("Prefer terse output")

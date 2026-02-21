@@ -27,7 +27,7 @@ def test_add_device_propagates_category():
     )
     mgr.add_device(config)
 
-    info = mgr.get_device_info("r1")
+    info = mgr.get_device_info("production/r1")
     assert info is not None
     assert info.category == "production"
 
@@ -94,6 +94,48 @@ def test_get_device_info():
     assert info.host == "10.0.0.1"
 
     assert mgr.get_device_info("nonexistent") is None
+
+
+# --- resolve_device tests ---
+
+class TestResolveDevice:
+    """Tests for resolve_device() identifier resolution."""
+
+    def test_resolve_composite_key(self):
+        mgr = DeviceManager()
+        mgr.add_device(DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin", category="production",
+        ))
+        assert mgr.resolve_device("production/r1") == "production/r1"
+
+    def test_resolve_unique_bare_name(self):
+        mgr = DeviceManager()
+        mgr.add_device(DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin", category="production",
+        ))
+        # Only one device named "r1", so bare name resolves
+        assert mgr.resolve_device("r1") == "production/r1"
+
+    def test_resolve_bare_name_uncategorized(self):
+        mgr = DeviceManager()
+        mgr.add_device(DeviceConfig(name="r1", host="10.0.0.1", username="admin"))
+        assert mgr.resolve_device("r1") == "r1"
+
+    def test_resolve_ambiguous_raises(self):
+        mgr = DeviceManager()
+        mgr.add_device(DeviceConfig(
+            name="r1", host="10.0.0.1", username="admin", category="production",
+        ))
+        mgr.add_device(DeviceConfig(
+            name="r1", host="10.0.0.2", username="admin", category="lab",
+        ))
+        with pytest.raises(ValueError, match="Ambiguous"):
+            mgr.resolve_device("r1")
+
+    def test_resolve_unknown_raises(self):
+        mgr = DeviceManager()
+        with pytest.raises(KeyError, match="Unknown device"):
+            mgr.resolve_device("nonexistent")
 
 
 # --- Blocklist tests ---

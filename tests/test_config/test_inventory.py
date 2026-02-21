@@ -114,7 +114,7 @@ def test_credential_merge_all_layers(tmp_path):
 
 
 def test_per_category_schedule_populates_device_schedules(tmp_path):
-    """Per-category schedules are stored in device_schedules."""
+    """Per-category schedules are stored in device_schedules with composite keys."""
     inv = {
         "credentials": {},
         "categories": {
@@ -132,16 +132,16 @@ def test_per_category_schedule_populates_device_schedules(tmp_path):
     settings = Settings()
     _load_inventory(settings, "inventory.yaml", tmp_path)
 
-    assert "r1" in settings.device_schedules
-    assert "r2" in settings.device_schedules
-    assert settings.device_schedules["r1"].chassis == 600
-    assert settings.device_schedules["r1"].interfaces == 300
+    assert "lab/r1" in settings.device_schedules
+    assert "lab/r2" in settings.device_schedules
+    assert settings.device_schedules["lab/r1"].chassis == 600
+    assert settings.device_schedules["lab/r1"].interfaces == 300
     # Other fields keep ScheduleConfig defaults
-    assert settings.device_schedules["r1"].routing == 180
+    assert settings.device_schedules["lab/r1"].routing == 180
 
 
-def test_duplicate_device_names_raises(tmp_path):
-    """Duplicate device names across categories should raise ValueError."""
+def test_same_name_different_categories_allowed(tmp_path):
+    """Same device name in different categories should be allowed."""
     inv = {
         "credentials": {},
         "categories": {
@@ -150,6 +150,29 @@ def test_duplicate_device_names_raises(tmp_path):
             },
             "cat2": {
                 "devices": [{"name": "r1", "host": "10.0.0.2"}],
+            },
+        },
+    }
+    _write_yaml(tmp_path / "inventory.yaml", inv)
+
+    settings = Settings()
+    _load_inventory(settings, "inventory.yaml", tmp_path)
+
+    assert len(settings.devices) == 2
+    keys = {d.device_key for d in settings.devices}
+    assert keys == {"cat1/r1", "cat2/r1"}
+
+
+def test_duplicate_name_within_category_raises(tmp_path):
+    """Duplicate device name within the same category should raise."""
+    inv = {
+        "credentials": {},
+        "categories": {
+            "prod": {
+                "devices": [
+                    {"name": "r1", "host": "10.0.0.1"},
+                    {"name": "r1", "host": "10.0.0.2"},
+                ],
             },
         },
     }

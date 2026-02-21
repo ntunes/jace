@@ -38,13 +38,67 @@ class MemoryStore:
         (self._base / "incidents").mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
+    # Path helpers
+    # ------------------------------------------------------------------
+
+    def _device_path(self, name: str) -> Path:
+        """Build the path for a device memory file.
+
+        Composite keys (``"category/device"``) produce a nested path:
+        ``devices/<category>/<device>.md``.  Bare names produce the flat
+        path: ``devices/<name>.md``.
+        """
+        if "/" in name:
+            category, bare = name.split("/", 1)
+            return (
+                self._base / "devices"
+                / self._sanitize(category)
+                / f"{self._sanitize(bare)}.md"
+            )
+        return self._base / "devices" / f"{self._sanitize(name)}.md"
+
+    def _device_heading(self, name: str) -> str:
+        """Return the heading for a device memory file."""
+        if "/" in name:
+            _, bare = name.split("/", 1)
+            return f"# Device: {bare}"
+        return f"# Device: {name}"
+
+    # ------------------------------------------------------------------
+    # Migration
+    # ------------------------------------------------------------------
+
+    def migrate_device_files(self, device_keys: list[str]) -> int:
+        """Move legacy flat device files into category subdirectories.
+
+        For each composite key (``"category/name"``), if the flat file
+        ``devices/<name>.md`` exists but the nested file does not, move it.
+
+        Returns the number of files migrated.
+        """
+        migrated = 0
+        for key in device_keys:
+            if "/" not in key:
+                continue
+            _, bare = key.split("/", 1)
+            legacy_path = self._base / "devices" / f"{self._sanitize(bare)}.md"
+            new_path = self._device_path(key)
+            if legacy_path.is_file() and not new_path.is_file():
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                legacy_path.rename(new_path)
+                self._cache.pop(legacy_path, None)
+                migrated += 1
+                logger.info("Migrated device memory %s → %s", legacy_path, new_path)
+        return migrated
+
+    # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
 
     def save_device(self, name: str, content: str) -> None:
         """Save or append to a device profile."""
-        path = self._base / "devices" / f"{self._sanitize(name)}.md"
-        self._append_or_create(path, content, f"# Device: {name}")
+        path = self._device_path(name)
+        self._append_or_create(path, content, self._device_heading(name))
 
     def save_user_preferences(self, content: str) -> None:
         """Save or append to user preferences."""
@@ -62,7 +116,7 @@ class MemoryStore:
 
     def get_device(self, name: str) -> str:
         """Return device profile content, or empty string."""
-        path = self._base / "devices" / f"{self._sanitize(name)}.md"
+        path = self._device_path(name)
         return self._read_cached(path)
 
     def get_user_preferences(self) -> str:
@@ -79,11 +133,26 @@ class MemoryStore:
     # ------------------------------------------------------------------
 
     def get_all_device_names(self) -> list[str]:
-        """Return names of all devices with memory files."""
+        """Return names of all devices with memory files.
+
+        Returns composite keys (``"category/name"``) for files in
+        subdirectories and bare names for files directly under
+        ``devices/``.
+        """
         devices_dir = self._base / "devices"
         if not devices_dir.exists():
             return []
-        return sorted(p.stem for p in devices_dir.glob("*.md"))
+        names: list[str] = []
+        for p in devices_dir.rglob("*.md"):
+            rel = p.relative_to(devices_dir)
+            parts = rel.parts
+            if len(parts) == 1:
+                # Flat file: devices/<name>.md
+                names.append(p.stem)
+            elif len(parts) == 2:
+                # Nested: devices/<category>/<name>.md
+                names.append(f"{parts[0]}/{p.stem}")
+        return sorted(names)
 
     def list_incidents(self, limit: int = 10) -> list[str]:
         """Return slugs of most recent incidents (by mtime)."""

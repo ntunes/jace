@@ -17,7 +17,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device (e.g., 'mx-core-01')",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name' (e.g., 'production/mx-01')",
                 },
                 "command": {
                     "type": "string",
@@ -38,7 +38,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
                 "section": {
                     "type": "string",
@@ -64,7 +64,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
             },
             "required": ["device"],
@@ -127,7 +127,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Target device name",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
                 "category": {
                     "type": "string",
@@ -150,7 +150,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
                 "metric": {
                     "type": "string",
@@ -175,7 +175,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
                 "rollback": {
                     "type": "integer",
@@ -236,7 +236,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
                 },
                 "device": {
                     "type": "string",
-                    "description": "Target device name (required for add)",
+                    "description": "Device identifier — 'name' or 'category/name' (required for add)",
                 },
                 "command": {
                     "type": "string",
@@ -300,8 +300,8 @@ AGENT_TOOLS: list[ToolDefinition] = [
                 "key": {
                     "type": "string",
                     "description": (
-                        "Device name or incident slug. "
-                        "Ignored for 'user' category."
+                        "Device identifier ('name' or 'category/name') "
+                        "or incident slug. Ignored for 'user' category."
                     ),
                 },
                 "content": {
@@ -330,8 +330,8 @@ AGENT_TOOLS: list[ToolDefinition] = [
                 "key": {
                     "type": "string",
                     "description": (
-                        "Device name or incident slug. "
-                        "Omit to list available entries."
+                        "Device identifier ('name' or 'category/name') "
+                        "or incident slug. Omit to list available entries."
                     ),
                 },
             },
@@ -351,7 +351,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
             "properties": {
                 "device": {
                     "type": "string",
-                    "description": "Name of the target device",
+                    "description": "Device identifier — either 'name' (if unique) or 'category/name'",
                 },
             },
             "required": ["device"],

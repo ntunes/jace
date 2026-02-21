@@ -81,6 +81,7 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
         return [
             {
                 "name": d.name,
+                "device_key": d.device_key,
                 "host": d.host,
                 "category": d.category,
                 "status": d.status.value,
@@ -101,19 +102,25 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
         device_category: str | None = None,
         include_resolved: bool = False,
     ) -> list[dict[str, Any]]:
+        resolved_device = device
+        if device:
+            try:
+                resolved_device = device_manager.resolve_device(device)
+            except (KeyError, ValueError):
+                pass  # use as-is for historical lookups
         if include_resolved:
             findings = await findings_tracker.get_history(
-                device=device, include_resolved=True,
+                device=resolved_device, include_resolved=True,
             )
         else:
             sev = Severity(severity) if severity else None
             findings = findings_tracker.get_active(
-                device=device, severity=sev, category=category,
+                device=resolved_device, severity=sev, category=category,
             )
         result = [f.to_dict() for f in findings]
         if device_category:
             cat_devices = {
-                d.name
+                d.device_key
                 for d in device_manager.list_devices(category=device_category)
             }
             result = [f for f in result if f.get("device") in cat_devices]
@@ -127,20 +134,24 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
             cat_devices = device_manager.list_devices(category=cat)
             result[cat] = {
                 "device_count": len(cat_devices),
-                "devices": [d.name for d in cat_devices],
+                "devices": [d.device_key for d in cat_devices],
             }
         uncategorized = device_manager.list_devices(category="")
         if uncategorized:
             result["_uncategorized"] = {
                 "device_count": len(uncategorized),
-                "devices": [d.name for d in uncategorized],
+                "devices": [d.device_key for d in uncategorized],
             }
         return result
 
-    @app.post("/profile/{device_name}")
+    @app.post("/profile/{device_name:path}")
     async def profile_device(device_name: str) -> dict[str, str]:
-        profile = await agent.profile_device(device_name)
-        return {"status": "ok", "device": device_name, "profile": profile}
+        try:
+            resolved = device_manager.resolve_device(device_name)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        profile = await agent.profile_device(resolved)
+        return {"status": "ok", "device": resolved, "profile": profile}
 
     @app.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest) -> ChatResponse:
