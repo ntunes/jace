@@ -74,11 +74,17 @@ AGENT_TOOLS: list[ToolDefinition] = [
         name="list_devices",
         description=(
             "List all managed devices and their current connection status, "
-            "model info, and last check time."
+            "model info, and last check time. Optionally filter by inventory "
+            "category (e.g. 'production', 'lab')."
         ),
         parameters={
             "type": "object",
-            "properties": {},
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Filter by inventory category (optional)",
+                },
+            },
         },
     ),
     ToolDefinition(

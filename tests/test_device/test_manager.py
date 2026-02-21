@@ -20,6 +20,65 @@ def test_add_device():
     assert devices[0].status == DeviceStatus.DISCONNECTED
 
 
+def test_add_device_propagates_category():
+    mgr = DeviceManager()
+    config = DeviceConfig(
+        name="r1", host="10.0.0.1", username="admin", category="production",
+    )
+    mgr.add_device(config)
+
+    info = mgr.get_device_info("r1")
+    assert info is not None
+    assert info.category == "production"
+
+
+def test_list_devices_filter_by_category():
+    mgr = DeviceManager()
+    mgr.add_device(DeviceConfig(
+        name="r1", host="10.0.0.1", username="admin", category="production",
+    ))
+    mgr.add_device(DeviceConfig(
+        name="r2", host="10.0.0.2", username="admin", category="lab",
+    ))
+    mgr.add_device(DeviceConfig(
+        name="r3", host="10.0.0.3", username="admin", category="production",
+    ))
+
+    prod = mgr.list_devices(category="production")
+    assert len(prod) == 2
+    assert {d.name for d in prod} == {"r1", "r3"}
+
+    lab = mgr.list_devices(category="lab")
+    assert len(lab) == 1
+    assert lab[0].name == "r2"
+
+    # No filter returns all
+    all_devs = mgr.list_devices()
+    assert len(all_devs) == 3
+
+
+def test_get_categories():
+    mgr = DeviceManager()
+    mgr.add_device(DeviceConfig(
+        name="r1", host="10.0.0.1", username="admin", category="production",
+    ))
+    mgr.add_device(DeviceConfig(
+        name="r2", host="10.0.0.2", username="admin", category="lab",
+    ))
+    mgr.add_device(DeviceConfig(
+        name="r3", host="10.0.0.3", username="admin",  # no category
+    ))
+
+    categories = mgr.get_categories()
+    assert categories == ["lab", "production"]
+
+
+def test_get_categories_empty():
+    mgr = DeviceManager()
+    mgr.add_device(DeviceConfig(name="r1", host="10.0.0.1", username="admin"))
+    assert mgr.get_categories() == []
+
+
 def test_list_connected_devices_empty():
     mgr = DeviceManager()
     assert mgr.get_connected_devices() == []

@@ -1,0 +1,35 @@
+# JACE Inventory File
+# Referenced from config.yaml via: inventory: inventory.yaml
+#
+# Defines named credential sets and device categories with optional
+# per-category health check schedules.
+
+credentials:
+  prod-creds:
+    username: admin
+    password: ${PROD_PASSWORD}
+    ssh_key: ~/.ssh/id_rsa_prod
+  lab-creds:
+    username: labuser
+    password: ${LAB_PASSWORD}
+
+categories:
+  production:
+    credentials: prod-creds        # all devices inherit these credentials
+    schedule:                      # optional — overrides global schedule
+      interfaces: 60
+    devices:
+      - name: mx-core-01
+        host: 10.0.0.1
+      - name: mx-core-02
+        host: 10.0.0.2
+        password: ${SPECIAL_PASSWORD}  # per-device credential override
+
+  lab:
+    credentials: lab-creds
+    schedule:
+      chassis: 600
+      interfaces: 300
+    devices:
+      - name: mx-lab-01
+        host: 192.168.1.1

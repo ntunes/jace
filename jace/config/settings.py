@@ -52,6 +52,7 @@ class DeviceConfig(BaseModel):
     platform: str = "junos"
     ssh_config: str | None = None
     timeout: int = 30
+    category: str = ""
 
 
 class ScheduleConfig(BaseModel):
@@ -96,6 +97,37 @@ class StorageConfig(BaseModel):
     path: str = "~/.jace/"
 
 
+class CredentialConfig(BaseModel):
+    username: str | None = None
+    password: str | None = None
+    ssh_key: str | None = None
+
+
+class InventoryDeviceConfig(BaseModel):
+    name: str
+    host: str
+    username: str | None = None
+    password: str | None = None
+    ssh_key: str | None = None
+    credentials: str | None = None  # optional per-device credential ref
+    driver: str = "auto"
+    port: int = 22
+    platform: str = "junos"
+    ssh_config: str | None = None
+    timeout: int = 30
+
+
+class InventoryCategoryConfig(BaseModel):
+    credentials: str | None = None
+    schedule: ScheduleConfig | None = None
+    devices: list[InventoryDeviceConfig] = Field(default_factory=list)
+
+
+class InventoryConfig(BaseModel):
+    credentials: dict[str, CredentialConfig] = Field(default_factory=dict)
+    categories: dict[str, InventoryCategoryConfig] = Field(default_factory=dict)
+
+
 class MCPServerConfig(BaseModel):
     name: str
     transport: str = "stdio"                          # stdio | sse | streamable-http
@@ -120,6 +152,9 @@ class Settings(BaseModel):
     blocked_commands: list[str] = Field(default_factory=list)
     allowed_commands: list[str] = Field(default_factory=list)
     ssh_config: str = "~/.ssh/config"
+    device_schedules: dict[str, ScheduleConfig] = Field(
+        default_factory=dict, exclude=True,
+    )
 
     @property
     def storage_path(self) -> Path:
@@ -144,6 +179,137 @@ def load_config(path: str | Path | None = None) -> Settings:
         with open(path) as f:
             raw = yaml.safe_load(f) or {}
         raw = _walk_and_expand(raw)
-        return Settings.model_validate(raw)
+
+        inventory_path = raw.pop("inventory", None)
+
+        has_devices = bool(raw.get("devices"))
+        if has_devices and inventory_path:
+            raise ValueError(
+                "Config defines both 'devices' and 'inventory'. "
+                "Use one or the other, not both."
+            )
+
+        settings = Settings.model_validate(raw)
+
+        if inventory_path:
+            config_dir = path.parent
+            _load_inventory(settings, inventory_path, config_dir)
+
+        return settings
 
     return Settings()
+
+
+def _resolve_credentials(
+    all_creds: dict[str, CredentialConfig],
+    name: str,
+    context: str,
+) -> CredentialConfig:
+    """Look up a named credential set, raising ValueError if missing."""
+    if name not in all_creds:
+        raise ValueError(
+            f"Unknown credential reference '{name}' in {context}"
+        )
+    return all_creds[name]
+
+
+def _merge_device_credentials(
+    cat_creds: CredentialConfig | None,
+    all_creds: dict[str, CredentialConfig],
+    dev: InventoryDeviceConfig,
+    context: str,
+) -> dict[str, str | None]:
+    """Merge credentials: DeviceConfig defaults → category creds → device
+    creds ref → device explicit fields.  Returns dict of credential fields."""
+    # Start with DeviceConfig defaults
+    merged: dict[str, str | None] = {
+        "username": "admin",
+        "password": None,
+        "ssh_key": None,
+    }
+
+    # Layer 2: category credentials
+    if cat_creds:
+        for field in ("username", "password", "ssh_key"):
+            val = getattr(cat_creds, field)
+            if val is not None:
+                merged[field] = val
+
+    # Layer 3: per-device credential reference
+    if dev.credentials:
+        dev_creds = _resolve_credentials(all_creds, dev.credentials, context)
+        for field in ("username", "password", "ssh_key"):
+            val = getattr(dev_creds, field)
+            if val is not None:
+                merged[field] = val
+
+    # Layer 4: explicit device-level fields
+    for field in ("username", "password", "ssh_key"):
+        val = getattr(dev, field)
+        if val is not None:
+            merged[field] = val
+
+    return merged
+
+
+def _load_inventory(
+    settings: Settings,
+    inventory_path: str,
+    config_dir: Path,
+) -> None:
+    """Load an inventory file and flatten it into settings.devices."""
+    full_path = (config_dir / inventory_path).resolve()
+    if not full_path.is_file():
+        raise ValueError(f"Inventory file not found: {full_path}")
+
+    with open(full_path) as f:
+        raw = yaml.safe_load(f) or {}
+    raw = _walk_and_expand(raw)
+
+    inventory = InventoryConfig.model_validate(raw)
+
+    seen_names: set[str] = set()
+    devices: list[DeviceConfig] = []
+
+    for cat_name, cat in inventory.categories.items():
+        # Resolve category-level credentials
+        cat_creds: CredentialConfig | None = None
+        if cat.credentials:
+            cat_creds = _resolve_credentials(
+                inventory.credentials,
+                cat.credentials,
+                f"category '{cat_name}'",
+            )
+
+        # Build per-device schedule mapping
+        if cat.schedule:
+            for dev in cat.devices:
+                settings.device_schedules[dev.name] = cat.schedule
+
+        for dev in cat.devices:
+            if dev.name in seen_names:
+                raise ValueError(
+                    f"Duplicate device name '{dev.name}' in inventory"
+                )
+            seen_names.add(dev.name)
+
+            creds = _merge_device_credentials(
+                cat_creds, inventory.credentials, dev,
+                f"device '{dev.name}' in category '{cat_name}'",
+            )
+
+            devices.append(DeviceConfig(
+                name=dev.name,
+                host=dev.host,
+                username=creds["username"] or "admin",
+                password=creds["password"],
+                ssh_key=creds["ssh_key"],
+                driver=dev.driver,
+                port=dev.port,
+                platform=dev.platform,
+                ssh_config=dev.ssh_config,
+                timeout=dev.timeout,
+                category=cat_name,
+            ))
+
+    settings.devices = devices

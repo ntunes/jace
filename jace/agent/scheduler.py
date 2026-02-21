@@ -17,22 +17,38 @@ ScheduleCallback = Callable[[str, str], Awaitable[None]]  # (category, device_na
 class Scheduler:
     """Schedules periodic health checks per category per device."""
 
-    def __init__(self, config: ScheduleConfig) -> None:
-        self._intervals: dict[str, int] = {
+    def __init__(
+        self,
+        config: ScheduleConfig,
+        device_schedules: dict[str, ScheduleConfig] | None = None,
+    ) -> None:
+        self._default_intervals: dict[str, int] = {
             "chassis": config.chassis,
             "interfaces": config.interfaces,
             "routing": config.routing,
             "system": config.system,
             "config": config.config,
         }
+        self._device_schedules = device_schedules or {}
         self._tasks: list[asyncio.Task] = []
         self._running = False
+
+    def _get_interval(self, category: str, device_name: str) -> int:
+        """Return the interval for a category on a device, preferring
+        per-device schedule over global default."""
+        dev_sched = self._device_schedules.get(device_name)
+        if dev_sched is not None:
+            val = getattr(dev_sched, category, None)
+            if val is not None:
+                return val
+        return self._default_intervals[category]
 
     def start(self, devices: list[str], callback: ScheduleCallback) -> None:
         """Start scheduling health checks for all devices and categories."""
         self._running = True
         for device_name in devices:
-            for category, interval in self._intervals.items():
+            for category in self._default_intervals:
+                interval = self._get_interval(category, device_name)
                 task = asyncio.create_task(
                     self._run_loop(category, device_name, interval, callback),
                     name=f"check-{category}-{device_name}",
@@ -69,5 +85,5 @@ class Scheduler:
             await asyncio.sleep(interval)
 
     def update_interval(self, category: str, interval: int) -> None:
-        """Update the interval for a category (takes effect on next cycle)."""
-        self._intervals[category] = interval
+        """Update the global default interval for a category (takes effect on next cycle)."""
+        self._default_intervals[category] = interval

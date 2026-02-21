@@ -43,10 +43,32 @@ class DeviceList(Static):
         text.append("Devices\n", style="bold underline")
         if not devices:
             text.append("  (none)", style="dim")
-        for dev in devices:
-            dot, style = _DEVICE_DOTS.get(dev.status.value, ("\u25cf", "white"))
-            text.append(f"  {dot} ", style=style)
-            text.append(f"{dev.name}\n")
+            self.update(text)
+            return
+
+        has_categories = any(dev.category for dev in devices)
+        if has_categories:
+            # Group by category
+            grouped: dict[str, list[DeviceInfo]] = {}
+            for dev in devices:
+                key = dev.category or "_uncategorized"
+                grouped.setdefault(key, []).append(dev)
+            for cat in sorted(grouped):
+                label = cat if cat != "_uncategorized" else "other"
+                text.append(f"  {label}\n", style="bold dim")
+                for dev in grouped[cat]:
+                    dot, style = _DEVICE_DOTS.get(
+                        dev.status.value, ("\u25cf", "white"),
+                    )
+                    text.append(f"    {dot} ", style=style)
+                    text.append(f"{dev.name}\n")
+        else:
+            for dev in devices:
+                dot, style = _DEVICE_DOTS.get(
+                    dev.status.value, ("\u25cf", "white"),
+                )
+                text.append(f"  {dot} ", style=style)
+                text.append(f"{dev.name}\n")
         self.update(text)
 
 

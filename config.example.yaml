@@ -13,6 +13,7 @@ llm:
 
 ssh_config: ~/.ssh/config            # global SSH config (default: ~/.ssh/config)
 
+# Option A: inline device list (simple setups)
 devices:
   - name: mx-core-01
     host: 10.0.0.1
@@ -24,6 +25,10 @@ devices:
     platform: junos
     # ssh_config: ~/.ssh/config_lab  # per-device override
     # timeout: 60                    # RPC/command timeout in seconds (default: 30)
+
+# Option B: external inventory file with categories and shared credentials
+# (mutually exclusive with 'devices:' above — use one or the other)
+# inventory: inventory.yaml        # path relative to this config file
 
 schedule:
   chassis:    300

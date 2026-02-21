@@ -34,10 +34,12 @@ def _make_agent(
     check_registry: AsyncMock | None = None,
     device_manager: MagicMock | None = None,
     anomaly_accumulator: AnomalyAccumulator | None = None,
+    device_schedules: dict | None = None,
 ) -> AgentCore:
     settings = Settings(
         llm=LLMConfig(provider="anthropic", model="test", api_key="k"),
         schedule=ScheduleConfig(),
+        device_schedules=device_schedules or {},
     )
     return AgentCore(
         settings=settings,
@@ -615,3 +617,21 @@ def test_get_chat_history_empty():
     """get_chat_history should return empty list when no messages."""
     agent = _make_agent()
     assert agent.get_chat_history() == []
+
+
+# ---------- device_schedules wiring ----------
+
+
+def test_scheduler_receives_device_schedules():
+    """Scheduler should receive device_schedules from settings."""
+    sched = ScheduleConfig(chassis=600, interfaces=300)
+    agent = _make_agent(device_schedules={"r1": sched})
+
+    assert agent._scheduler._device_schedules == {"r1": sched}
+    assert agent._scheduler._default_intervals["chassis"] == 300  # from default ScheduleConfig
+
+
+def test_scheduler_no_device_schedules():
+    """Scheduler should work without device_schedules."""
+    agent = _make_agent()
+    assert agent._scheduler._device_schedules == {}

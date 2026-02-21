@@ -76,12 +76,13 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
         }
 
     @app.get("/devices")
-    async def list_devices() -> list[dict[str, Any]]:
-        devices = device_manager.list_devices()
+    async def list_devices(category: str | None = None) -> list[dict[str, Any]]:
+        devices = device_manager.list_devices(category=category)
         return [
             {
                 "name": d.name,
                 "host": d.host,
+                "category": d.category,
                 "status": d.status.value,
                 "model": d.model,
                 "version": d.version,
@@ -97,6 +98,7 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
         device: str | None = None,
         severity: str | None = None,
         category: str | None = None,
+        device_category: str | None = None,
         include_resolved: bool = False,
     ) -> list[dict[str, Any]]:
         if include_resolved:
@@ -108,7 +110,32 @@ def create_api_app(agent: AgentCore, device_manager: DeviceManager,
             findings = findings_tracker.get_active(
                 device=device, severity=sev, category=category,
             )
-        return [f.to_dict() for f in findings]
+        result = [f.to_dict() for f in findings]
+        if device_category:
+            cat_devices = {
+                d.name
+                for d in device_manager.list_devices(category=device_category)
+            }
+            result = [f for f in result if f.get("device") in cat_devices]
+        return result
+
+    @app.get("/inventory")
+    async def get_inventory() -> dict[str, Any]:
+        categories = device_manager.get_categories()
+        result: dict[str, Any] = {}
+        for cat in categories:
+            cat_devices = device_manager.list_devices(category=cat)
+            result[cat] = {
+                "device_count": len(cat_devices),
+                "devices": [d.name for d in cat_devices],
+            }
+        uncategorized = device_manager.list_devices(category="")
+        if uncategorized:
+            result["_uncategorized"] = {
+                "device_count": len(uncategorized),
+                "devices": [d.name for d in uncategorized],
+            }
+        return result
 
     @app.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest) -> ChatResponse:

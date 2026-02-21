@@ -256,7 +256,10 @@ class AgentCore:
         self._accumulator = anomaly_accumulator
         if self._accumulator is not None:
             self._accumulator.set_callback(self._investigate_anomaly_batch)
-        self._scheduler = Scheduler(settings.schedule)
+        self._scheduler = Scheduler(
+            settings.schedule,
+            device_schedules=settings.device_schedules or None,
+        )
         self._interactive_ctx = ConversationContext()
         self._notify_callback: NotifyCallback | None = None
         self._approval_callback: ApprovalCallback | None = None
@@ -778,7 +781,9 @@ class AgentCore:
                 return json.dumps(facts, indent=2, default=str)
 
             elif name == "list_devices":
-                devices = self._device_manager.list_devices()
+                devices = self._device_manager.list_devices(
+                    category=args.get("category"),
+                )
                 result = []
                 for d in devices:
                     entry: dict = {
@@ -786,6 +791,8 @@ class AgentCore:
                         "status": d.status.value,
                         "model": d.model, "version": d.version,
                     }
+                    if d.category:
+                        entry["category"] = d.category
                     if d.error:
                         entry["error"] = d.error
                     result.append(entry)

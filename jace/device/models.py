@@ -36,6 +36,7 @@ class CommandResult:
 class DeviceInfo:
     name: str
     host: str
+    category: str = ""
     model: str = ""
     version: str = ""
     serial: str = ""

@@ -38,6 +38,7 @@ class DeviceManager:
         self._devices[config.name] = config
         self._info[config.name] = DeviceInfo(
             name=config.name, host=config.host,
+            category=config.category,
         )
 
     async def connect_all(self, on_connect: object = None) -> None:
@@ -187,8 +188,14 @@ class DeviceManager:
             return {"error": f"Device '{device_name}' not connected"}
         return await driver.get_facts()
 
-    def list_devices(self) -> list[DeviceInfo]:
+    def list_devices(self, category: str | None = None) -> list[DeviceInfo]:
+        if category is not None:
+            return [d for d in self._info.values() if d.category == category]
         return list(self._info.values())
+
+    def get_categories(self) -> list[str]:
+        """Return sorted unique non-empty category names."""
+        return sorted({d.category for d in self._info.values() if d.category})
 
     def get_device_info(self, device_name: str) -> DeviceInfo | None:
         return self._info.get(device_name)
